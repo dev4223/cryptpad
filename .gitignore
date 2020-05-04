@@ -2,11 +2,11 @@ datastore
 tasks
 www/bower_components/*
 node_modules
-/config.js
+# /config.js
 customization
 .*.swp
 *.db
-/customize/
+# /customize/
 messages.log
 .DS_Store
 www/scratch
