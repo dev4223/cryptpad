@@ -96,9 +96,8 @@ module.exports = {
     contentSecurity: [
         "default-src 'none'",
         "style-src 'unsafe-inline' 'self' " + domain,
-        "script-src 'unsafe-inline' 'unsafe-eval' 'self'" + domain,
+        "script-src 'unsafe-inline' 'unsafe-eval' 'self' resource:" + domain,
         "font-src 'self' data:" + domain,
-        "worker-src 'self'" + domain,
 
     /*  child-src is used to restrict iframes to a set of allowed domains.
      *  connect-src is used to restrict what domains can connect to the websocket.
@@ -130,9 +129,8 @@ module.exports = {
         "default-src 'none'",
         "style-src 'unsafe-inline' 'self'" + domain,
         // Unsafe inline, unsafe-eval are needed for ckeditor :(
-        "script-src 'self' 'unsafe-eval' 'unsafe-inline'" + domain,
+        "script-src 'self' 'unsafe-eval' 'unsafe-inline' resource:" + domain,
         "font-src 'self'" + domain,
-        "worker-src 'self'" + domain,
 
     /*  See above under 'contentSecurity' as to how these values should be
      *  configured for best effect.
