@@ -42,6 +42,7 @@ module.exports = {
     allowSubscriptions: true,
     removeDonateButton: true,
     noSubscriptionButton: true,
+    enableTaskScheduling: true,
 
 /*  httpUnsafeOrigin is the URL that clients will enter to load your instance.
  *  Any other URL that somehow points to your instance is supposed to be blocked.
