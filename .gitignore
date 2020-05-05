@@ -19,3 +19,4 @@ block/
 logs/
 privileged.conf
 *yolo.sh
+config/config.js
