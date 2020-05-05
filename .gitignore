@@ -3,6 +3,7 @@ tasks
 www/bower_components/*
 node_modules
 customization
+customize/bg14.jpg
 .*.swp
 *.db
 messages.log
