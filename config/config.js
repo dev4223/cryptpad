@@ -18,6 +18,11 @@
     to accept donations via our opencollective page: https://opencollective.com/cryptpad
 
 */
+var _domain = 'https://cryptpad.hokr.us/';
+// we prepend a space because every usage expects it
+// requiring admins to preserve it is unnecessarily confusing
+var domain = ' ' + _domain;
+
 module.exports = {
 /*  CryptPad is designed to serve its content over two domains.
  *  Account passwords and cryptographic content is handled on the 'main' domain,
@@ -49,7 +54,7 @@ module.exports = {
  *  cryptpad/docs/example.nginx.conf (see the $main_domain variable)
  *
  */
-    httpUnsafeOrigin: 'https://cryptpad.hokr.us',
+    httpUnsafeOrigin: domain,
 
 /*  httpSafeOrigin is the URL that is used for the 'sandbox' described above.
  *  If you're testing or developing with CryptPad on your local machine then
