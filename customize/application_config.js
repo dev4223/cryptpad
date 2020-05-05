@@ -11,5 +11,6 @@ define(['/common/application_config_internal.js'], function (AppConfig) {
     config.disableAnonymousStore = true;
     config.surveyURL = "https://survey.cryptpad.fr/index.php/672782?lang=de";
     config.availablePadTypes = ['drive', 'teams', 'pad', 'sheet', 'code', 'slide', 'poll', 'kanban', 'whiteboard','oodoc', 'ooslide', 'file', 'todo', 'contacts'];
+    config.loginSalt = '#jKCRbdt~-MYW2(1M+)s%1gP|F|N+$^z$P|9e1x5KH<@$ -Xq/>uY{M_d+i5A;f!';
     return AppConfig;
 });
