@@ -1036,7 +1036,7 @@ define([
             }
         },
         //arrowType: 'round',
-        dynamicTitle: true,
+        dynamicTitle: false,
         arrowTransform: 'scale(2)',
         zIndex: 100000001
     });
@@ -1044,6 +1044,7 @@ define([
         var MutationObserver = window.MutationObserver;
         var addTippy = function (i, el) {
             if (el._tippy) { return; }
+            if (!el.getAttribute('title')) { return; }
             if (el.nodeName === 'IFRAME') { return; }
             var opts = {
                 distance: 15
@@ -1053,6 +1054,10 @@ define([
             }).forEach(function (obj) {
                 opts[obj.name.slice(11)] = obj.value;
             });
+            if (!el.getAttribute('data-cptippy-html') && !el.fixHTML) {
+                el.setAttribute('title', Util.fixHTML(el.getAttribute('title'))); // fixHTML
+                el.fixHTML = true; // Don't clean HTML twice on the same element
+            }
             Tippy(el, opts);
         };
         // This is the robust solution to remove dangling tooltips
@@ -1075,6 +1080,7 @@ define([
                     }
                 }
                 if (mutation.type === "attributes" && mutation.attributeName === "title") {
+                    mutation.target.fixHTML = false;
                     addTippy(0, mutation.target);
                 }
             });
