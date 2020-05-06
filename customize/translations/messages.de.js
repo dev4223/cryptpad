@@ -9,11 +9,11 @@ define(['/common/translations/messages.de.js'], function (Messages) {
     // Replace the existing keys in your copied file here:
     // Messages.button_newpad = "New Rich Text Document";
     out = Messages;
-    out.type.code = 'Pad (Markdown/Code)';
-    out.button_newcode = 'Neues Pad (Markdown/Code)';
-    out.themeButtonTitle = "Wähle das Farbschema für Pad(Markdown/Code)- und Folieneditor";
-    out.settings_cat_code = "Pad (Markdown/Code)";
-    out.settings_codeIndentation = 'Einrückung für den Pad(Markdown/Code)-Editor (Leerzeichen)';
+    out.type.code = 'Pad (md/Code)';
+    out.button_newcode = 'Neues Pad (md/Code)';
+    out.themeButtonTitle = "Wähle das Farbschema für Pad(md/Code)- und Folieneditor";
+    out.settings_cat_code = "Pad (md/Code)";
+    out.settings_codeIndentation = 'Einrückung für den Pad(md/Code)-Editor (Leerzeichen)';
     out.imprint = 'Impressum';
     out.main_catch_phrase = '"Make it so!" - Jean Luc Picard';
     delete out.faq.other;
