@@ -188,15 +188,13 @@ define([
 
         var Title;
         var onLocal = function () {};
-        var $rightside;
         var $drawer;
         exp.init = function (local, title, toolbar) {
             if (typeof local === "function") {
                 onLocal = local;
             }
             Title = title;
-            $rightside = toolbar.$rightside;
-            $drawer = toolbar.$drawer;
+            $drawer = toolbar.$theme || $();
         };
 
         var editor = exp.editor = CMeditor.fromTextArea($textarea[0], {
@@ -308,13 +306,19 @@ define([
             var dropdownConfig = {
                 text: Messages.languageButton, // Button initial text
                 options: options, // Entries displayed in the menu
-                left: true, // Open to the left of the button
                 isSelect: true,
                 feedback: 'CODE_LANGUAGE',
                 common: Common
             };
             var $block = exp.$language = UIElements.createDropdown(dropdownConfig);
-            $block.find('button').attr('title', Messages.languageButtonTitle);
+            $block.find('button').attr('title', Messages.languageButtonTitle).click(function () {
+                var state = $block.find('.cp-dropdown-content').is(':visible');
+                var $c = $block.closest('.cp-toolbar-drawer-content');
+                $c.removeClass('cp-dropdown-visible');
+                if (!state) {
+                    $c.addClass('cp-dropdown-visible');
+                }
+            });
 
             var isHovering = false;
             var $aLanguages = $block.find('a');
@@ -356,16 +360,22 @@ define([
                     });
                 });
                 var dropdownConfig = {
-                    text: 'Theme', // Button initial text
+                    text: Messages.code_editorTheme, // Button initial text
                     options: options, // Entries displayed in the menu
-                    left: true, // Open to the left of the button
                     isSelect: true,
                     initialValue: lastTheme,
                     feedback: 'CODE_THEME',
                     common: Common
                 };
                 var $block = exp.$theme = UIElements.createDropdown(dropdownConfig);
-                $block.find('button').attr('title', Messages.themeButtonTitle);
+                $block.find('button').attr('title', Messages.themeButtonTitle).click(function () {
+                    var state = $block.find('.cp-dropdown-content').is(':visible');
+                    var $c = $block.closest('.cp-toolbar-drawer-content');
+                    $c.removeClass('cp-dropdown-visible');
+                    if (!state) {
+                        $c.addClass('cp-dropdown-visible');
+                    }
+                });
 
                 setTheme(lastTheme, $block);
 

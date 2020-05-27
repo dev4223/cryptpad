@@ -1,7 +1,7 @@
 define([
     'jquery',
     '/bower_components/hyperjson/hyperjson.js',
-    '/common/toolbar3.js',
+    '/common/toolbar.js',
     'json.sortify',
     '/bower_components/nthen/index.js',
     '/common/sframe-common.js',
@@ -526,7 +526,7 @@ define([
                     mediaTagEmbedder($('<media-tag src="' + src +
                         '" data-crypto-key="cryptpad:' + data.key + '"></media-tag>'), data);
                 });
-            }).appendTo(toolbar.$rightside).hide();
+            }).appendTo(toolbar.$bottomL).hide();
         };
         var setMediaTagEmbedder = function (mte, filter) {
             if (!common.isLoggedIn()) { return; }
@@ -654,19 +654,7 @@ define([
                 getHeadingText: function () { return titleRecommender(); }
             }, onLocal);
             var configTb = {
-                displayed: [
-                    'chat',
-                    'userlist',
-                    'title',
-                    'useradmin',
-                    'spinner',
-                    'newpad',
-                    'share',
-                    'limit',
-                    'request',
-                    'unpinnedWarning',
-                    'notifications'
-                ],
+                displayed: ['pad'],
                 title: title.getTitleConfig(),
                 metadataMgr: cpNfInner.metadataMgr,
                 readOnly: readOnly,
@@ -703,27 +691,25 @@ define([
                     getTitle: function () { return cpNfInner.metadataMgr.getMetadata().title; }
                 };
                 var $templateButton = common.createButton('template', true, templateObj);
-                toolbar.$rightside.append($templateButton);
+                toolbar.$drawer.append($templateButton);
             }
 
             var $importTemplateButton = common.createButton('importtemplate', true);
             toolbar.$drawer.append($importTemplateButton);
 
             /* add a forget button */
-            toolbar.$rightside.append(common.createButton('forget', true, {}, function (err) {
+            toolbar.$drawer.append(common.createButton('forget', true, {}, function (err) {
                 if (err) { return; }
                 stateChange(STATE.FORGOTTEN);
             }));
 
             if (common.isLoggedIn()) {
                 var $tags = common.createButton('hashtag', true);
-                toolbar.$rightside.append($tags);
+                toolbar.$drawer.append($tags);
             }
 
             var $properties = common.createButton('properties', true);
             toolbar.$drawer.append($properties);
-            var $access = common.createButton('access', true);
-            toolbar.$drawer.append($access);
 
             createFilePicker();
 
