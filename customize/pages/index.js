@@ -33,9 +33,9 @@ define([
                 [ 'poll', Msg.type.poll],
                 [ 'kanban', Msg.type.kanban],
                 [ 'whiteboard', Msg.type.whiteboard],
-                [ 'drive', Msg.type.drive],
+                [ 'drive', Msg.type.drive]/*,
                 [ 'oodoc', Msg.type.oodoc],
-                [ 'ooslide', Msg.type.ooslide]
+                [ 'ooslide', Msg.type.ooslide]*/
             ].filter(function (x) {
                 return isAvailableType(x[0]);
             })
