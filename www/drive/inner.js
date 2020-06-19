@@ -255,9 +255,9 @@ define([
                     text: '',
                     name: 'burn-anon-drive',
                     icon: 'fa-ban',
-                    title: Messages.fm_burnThisDriveButton,
+                    tippy: Messages.fm_burnThisDriveButton,
                     drawer: false
-                }).click(function () {
+                }, function () {
                     UI.confirm(Messages.fm_burnThisDrive, function (yes) {
                         if (!yes) { return; }
                         common.getSframeChannel().event('EV_BURN_ANON_DRIVE');
@@ -283,13 +283,13 @@ define([
             var onDisconnect = function (noAlert) {
                 setEditable(false);
                 if (drive.refresh) { drive.refresh(); }
-                APP.toolbar.failed();
+                toolbar.failed();
                 if (!noAlert) { UIElements.disconnectAlert(); }
             };
             var onReconnect = function () {
                 setEditable(true);
                 if (drive.refresh) { drive.refresh(); }
-                APP.toolbar.reconnecting();
+                toolbar.reconnecting();
                 UIElements.reconnectAlert();
             };
 

@@ -1,7 +1,8 @@
 define([
     'jquery',
+    '/customize/messages.js',
     '/bower_components/dragula.js/dist/dragula.min.js',
-], function ($, Dragula) {
+], function ($, Messages, Dragula) {
         /**
          * jKanban
          * Vanilla Javascript plugin for manage kanban boards
@@ -106,7 +107,7 @@ define([
             boardContainerOuter.appendChild(boardContainer);
             var addBoard = document.createElement('div');
             addBoard.id = 'kanban-addboard';
-            addBoard.innerText = '+';
+            addBoard.innerHTML = '<i class="fa fa-plus"></i>';
             boardContainer.appendChild(addBoard);
             var trash = self.trashContainer = document.createElement('div');
             trash.setAttribute('id', 'kanban-trash');
@@ -559,25 +560,37 @@ define([
             return nodeItem;
         };
 
-        this.addElement = function (boardID, element) {
+        this.addElement = function (boardID, element, before) {
 
             // add Element to JSON
             var boardJSON = __findBoardJSON(boardID);
 
-            boardJSON.item.push(element.id);
+            if (before) {
+                boardJSON.item.unshift(element.id);
+            } else {
+                boardJSON.item.push(element.id);
+            }
             self.options.boards.items = self.options.boards.items || {};
             self.options.boards.items[element.id] = element;
 
             var board = self.element.querySelector('[data-id="' + boardID + '"] .kanban-drag');
-            board.appendChild(getElementNode(element));
+            if (before) {
+                board.insertBefore(getElementNode(element), board.firstChild);
+            } else {
+                board.appendChild(getElementNode(element));
+            }
             // send event that board has changed
             self.onChange();
             return self;
         };
 
-        this.addForm = function (boardID, formItem) {
+        this.addForm = function (boardID, formItem, isTop) {
             var board = self.element.querySelector('[data-id="' + boardID + '"] .kanban-drag');
-            board.appendChild(formItem);
+            if (isTop) {
+                board.insertBefore(formItem, board.firstChild);
+            } else {
+                board.appendChild(formItem);
+            }
             return self;
         };
 
@@ -662,9 +675,15 @@ define([
             var footerBoard = document.createElement('footer');
             footerBoard.classList.add('kanban-board-footer');
             //add button
+            var addTopBoardItem = document.createElement('span');
+            addTopBoardItem.classList.add('kanban-title-button');
+            addTopBoardItem.setAttribute('data-top', "1");
+            addTopBoardItem.innerHTML = '<i class="cptools cptools-add-top">';
+            footerBoard.appendChild(addTopBoardItem);
+            __onAddItemClickHandler(addTopBoardItem);
             var addBoardItem = document.createElement('span');
             addBoardItem.classList.add('kanban-title-button');
-            addBoardItem.innerText = '+';
+            addBoardItem.innerHTML = '<i class="cptools cptools-add-bottom">';
             footerBoard.appendChild(addBoardItem);
             __onAddItemClickHandler(addBoardItem);
 
