@@ -944,6 +944,7 @@ define([
 
             // Ctrl+A select all
             if (e.which === 65 && (e.ctrlKey || (e.metaKey && APP.isMac))) {
+                e.preventDefault();
                 $content.find('.cp-app-drive-element:not(.cp-app-drive-element-selected)')
                     .each(function (idx, element) {
                         selectElement($(element));
@@ -4181,7 +4182,8 @@ define([
                     if (!manager.isSharedFolder(el)) {
                         name = path.path[path.path.length - 1];
                         folderEl = el;
-                        downloadFolder(folderEl, name);
+                        var sfId = manager.isInSharedFolder(path.path);
+                        downloadFolder(folderEl, name, sfId);
                     }
                     // shared folder
                     else {
