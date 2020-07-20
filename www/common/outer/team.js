@@ -164,6 +164,10 @@ define([
     var handleSharedFolder = function (ctx, id, sfId, rt) {
         var t = ctx.teams[id];
         if (!t) { return; }
+        if (!rt) {
+            delete t.sharedFolders[sfId];
+            return;
+        }
         t.sharedFolders[sfId] = rt;
         registerChangeEvents(ctx, t, rt.proxy, sfId);
     };
@@ -285,9 +289,6 @@ define([
                 settings: {
                     drive: Util.find(ctx.store, ['proxy', 'settings', 'drive'])
                 },
-                Store: ctx.Store
-            }, {
-                outer: true,
                 removeOwnedChannel: function (channel, cb) {
                     var data;
                     if (typeof(channel) === "object") {
@@ -301,6 +302,9 @@ define([
                     }
                     ctx.Store.removeOwnedChannel('', data, cb);
                 },
+                Store: ctx.Store
+            }, {
+                outer: true,
                 edPublic: keys.drive.edPublic,
                 loggedIn: true,
                 log: function (msg) {
