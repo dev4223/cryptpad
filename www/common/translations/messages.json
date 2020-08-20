@@ -1381,6 +1381,7 @@
     "settings_safeLinkDefault": "Safe Links are now turned on by default. Please use the <i class=\"fa fa-shhare-alt\"></i> <b>Share</b> menu to copy links rather than your browser's address bar.",
     "info_imprintFlavour": "<a>Legal information about the administrators of this instance</a>.",
     "user_about": "About CryptPad",
+    "user_guide": "User Guide",
     "info_privacyFlavour": "Our <a>privacy policy</a> describes how we treat your data.",
     "support_cat_account": "User account",
     "support_cat_data": "Loss of content",
