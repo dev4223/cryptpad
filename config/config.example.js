@@ -192,6 +192,25 @@ module.exports = {
      */
     //archiveRetentionTime: 15,
 
+    /*  It's possible to configure your instance to remove data
+     *  stored on behalf of inactive accounts. Set 'accountRetentionTime'
+     *  to the number of days an account can remain idle before its
+     *  documents and other account data is removed.
+     *
+     *  Leave this value commented out to preserve all data stored
+     *  by user accounts regardless of inactivity.
+     */
+     //accountRetentionTime: 365,
+
+    /*  Starting with CryptPad 3.23.0, the server automatically runs
+     *  the script responsible for removing inactive data according to
+     *  your configured definition of inactivity. Set this value to `true`
+     *  if you prefer not to remove inactive data, or if you prefer to
+     *  do so manually using `scripts/evict-inactive.js`.
+     */
+    //disableIntegratedEviction: true,
+
+
     /*  Max Upload Size (bytes)
      *  this sets the maximum size of any one file uploaded to the server.
      *  anything larger than this size will be rejected

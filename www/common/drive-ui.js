@@ -1389,7 +1389,7 @@ define([
                 }
                 $button.show();
                 $button.css({
-                    background: '#000'
+                    background: '#63b1f7'
                 });
                 window.setTimeout(function () {
                     $button.css({
@@ -1783,9 +1783,9 @@ define([
             });
 
             if (sharedF && manager.isPathIn(newPath, [TRASH])) {
-                // XXX create a key here?
+                // TODO create a key here?
                 // You can't move to YOUR trash documents stored in a shared folder
-                // XXX or keep deletePaths: trigger the "Remove from cryptdrive" modal
+                // TODO or keep deletePaths: trigger the "Remove from cryptdrive" modal
                 return void UI.warn(Messages.error);
                 //return void deletePaths(null, movedPaths);
             }
@@ -3692,6 +3692,9 @@ define([
                     if ($('.cp-contextmenu:visible').length) {
                         APP.hideMenu();
                         return;
+                    }
+                    if (!$li.length) {
+                        return void $dirContent.contextmenu();
                     }
                     // Open the menu
                     $li.contextmenu();
