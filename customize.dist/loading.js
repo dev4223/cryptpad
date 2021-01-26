@@ -1,7 +1,19 @@
-// dark #326599
-// light #4591c4
-define([], function () {
+// bg #e7e7e7
+// blue #0087FF
+// text #3F4141
+define(['/customize/messages.js'], function (Messages) {
     var loadingStyle = (function(){/*
+@font-face {
+  font-family: 'Open Sans';
+  src: url('/bower_components/open-sans-fontface/fonts/Regular/OpenSans-Regular.eot');
+  src: url('/bower_components/open-sans-fontface/fonts/Regular/OpenSans-Regular.eot?#iefix') format('embedded-opentype'),
+       url('/bower_components/open-sans-fontface/fonts/Regular/OpenSans-Regular.woff') format('woff'),
+       url('/bower_components/open-sans-fontface/fonts/Regular/OpenSans-Regular.ttf') format('truetype'),
+       url('/bower_components/open-sans-fontface/fonts/Regular/OpenSans-Regular.svg#OpenSansRegular') format('svg');
+  font-weight: normal;
+  font-style: normal;
+}
+
 #cp-loading {
   visibility: visible;
   position: fixed;
@@ -10,8 +22,8 @@ define([], function () {
   bottom: 0px;
   left: 0px;
   right: 0px;
-  background: linear-gradient(to right, #326599 0%, #326599 50%, #4591c4 50%, #4591c4 100%);
-  color: #fafafa;
+  background-color: #e7e7e7;
+  color: #3F4141;
   font-size: 1.3em;
   line-height: 120%;
   opacity: 1;
@@ -19,6 +31,10 @@ define([], function () {
   flex-flow: column;
   justify-content: center;
   align-items: center;
+  font: 20px 'Open Sans', 'Helvetica Neue', sans-serif !important;
+}
+#cp-loading.cp-loading-transparent {
+    background-color: rgba(231, 231, 231, 0.7);
 }
 #cp-loading.cp-loading-hidden {
   opacity: 0;
@@ -40,34 +56,38 @@ define([], function () {
 #cp-loading .cp-loading-container {
     width: 700px;
     max-width: 90vw;
-    height: 500px;
+    height: 236px;
     max-height: calc(100vh - 20px);
     margin: 50px;
     flex-shrink: 0;
     display: flex;
     flex-flow: column;
-    justify-content: space-around;
     align-items: center;
-}
-@media screen and (max-height: 800px) {
-    #cp-loading .cp-loading-container {
-        height: auto;
-    }
-}
-@media screen and (max-width: 600px) {
-    #cp-loading .cp-loading-container {
-        height: auto;
-    }
 }
 #cp-loading .cp-loading-cryptofist {
   margin-left: auto;
   margin-right: auto;
-  //height: 300px;
   max-width: 90vw;
   max-height: 300px;
   width: auto;
   height: auto;
   margin-bottom: 2em;
+}
+@media screen and (max-width: 500px) {
+  #cp-loading {
+      font-size: 16px !important;
+  }
+  #cp-loading .cp-loading-container {
+      height: 206px;
+  }
+}
+@media screen and (max-height: 700px) {
+  #cp-loading {
+      font-size: 16px !important;
+  }
+  #cp-loading .cp-loading-container {
+      height: 206px;
+  }
 }
 @media screen and (max-height: 500px) {
   #cp-loading .cp-loading-logo {
@@ -158,40 +178,12 @@ p.cp-password-info{
 }
 #cp-loading .cp-loading-spinner-container {
   position: relative;
-  height: 100px;
-}
-#cp-loading .cp-loading-spinner-container > div {
-  height: 100px;
-}
-#cp-loading-tip {
-  position: fixed;
-  z-index: 10000000;
-  top: 80%;
-  left: 0;
-  right: 0;
-  text-align: center;
-  transition: opacity 750ms;
-  transition-delay: 3000ms;
-}
-@media screen and (max-height: 600px) {
-  #cp-loading-tip {
-    display: none;
-  }
-}
-#cp-loading-tip span {
-  background: #222;
-  color: #fafafa;
-  text-align: center;
-  font-size: 1.3em;
-  opacity: 0.7;
-  font-family: 'Open Sans', 'Helvetica Neue', sans-serif;
-  padding: 15px;
-  max-width: 60%;
-  display: inline-block;
+  height: 80px;
+  margin-bottom: 50px;
 }
 .cp-loading-progress {
     width: 100%;
-    margin: 20px;
+    text-align: center;
 }
 .cp-loading-progress p {
     margin: 5px;
@@ -199,13 +191,45 @@ p.cp-password-info{
     white-space: nowrap;
     text-overflow: ellipsis;
 }
+.cp-loading-progress-list {
+    text-align: left;
+    display: inline-block;
+    margin-bottom: 50px;
+    max-width: 100%;
+}
+.cp-loading-progress-list ul {
+    list-style: none;
+    padding-left: 0;
+    margin: 0;
+}
+.cp-loading-progress-list li {
+    padding: 0px 5px;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.cp-loading-progress-list li i {
+    width: 22px;
+}
+.cp-loading-progress-list li span{
+    margin-left: 10px;
+}
+.cp-loading-progress-list li span.percent {
+    position: absolute;
+}
+
 .cp-loading-progress-bar {
     height: 24px;
     background: white;
+    border: 1px solid #0087FF;
 }
 .cp-loading-progress-bar-value {
     height: 100%;
-    background: #5cb85c;
+    background: #0087FF;
 }
 
 @keyframes spin {
@@ -222,14 +246,14 @@ p.cp-password-info{
     box-sizing: border-box;
     width: 80px;
     height: 80px;
-    border: 11px solid white;
+    border: 11px solid #999999;
     border-radius: 50%;
     border-top-color: transparent;
     animation: spin infinite 3s;
     animation-timing-function: cubic-bezier(.6,0.15,0.4,0.85);
 }
 
-button.primary{
+button:not(.btn).primary{
     border: 1px solid #4591c4;
     padding: 8px 12px;
     text-transform: uppercase;
@@ -238,7 +262,7 @@ button.primary{
     font-weight: bold;
 }
 
-button.primary:hover{
+button:not(.btn).primary:hover{
     background-color: rgb(52, 118, 162);
 }
 
@@ -251,16 +275,123 @@ button.primary:hover{
         loadingStyle,
         '</style>',
         '<div class="cp-loading-logo">',
-            '<img class="cp-loading-cryptofist" src="/customize/loading-logo.png?' + urlArgs + '">',
+            '<img class="cp-loading-cryptofist" src="/customize/CryptPad_logo.svg?' + urlArgs + '">',
         '</div>',
         '<div class="cp-loading-container">',
             '<div class="cp-loading-spinner-container">',
                 '<span class="cp-spinner"></span>',
             '</div>',
+            '<div class="cp-loading-progress">',
+                '<div class="cp-loading-progress-list"></div>',
+                '<div class="cp-loading-progress-container"></div>',
+            '</div>',
             '<p id="cp-loading-message"></p>',
         '</div>'
     ].join('');
+    var built = false;
+
+    var types = ['less', 'drive', 'migrate', 'sf', 'team', 'pad', 'end'];
+    var current, progress;
+    var makeList = function (data) {
+        var c = types.indexOf(data.type);
+        current = c;
+        var getLi = function (i) {
+            var check = (i < c || (i === c && data.progress >= 100)) ? 'fa-check-square-o'
+                                                                      : 'fa-square-o';
+            var percentStr = '';
+            if (i === c) {
+                var p = Math.min(Math.floor(data.progress), 100);
+                percentStr = '<span class="percent">('+p+'%)</span>';
+            }
+            return '<li><i class="fa '+check+'"></i><span>'+Messages['loading_state_'+i]+'</span>' + percentStr;
+        };
+        var list = '<ul>';
+        types.forEach(function (el, i) {
+            if (el === "end") { return; }
+            list += getLi(i);
+        });
+        list += '</ul>';
+        return list;
+    };
+    var makeBar = function (data) {
+        var c = types.indexOf(data.type);
+        var l = types.length - 1; // don't count "end" as a type
+        var progress = Math.min(data.progress, 100);
+        var p = (progress / l) + (100 * c / l);
+        var bar = '<div class="cp-loading-progress-bar">'+
+                    '<div class="cp-loading-progress-bar-value" style="width:'+p+'%"></div>'+
+                  '</div>';
+        return bar;
+    };
+
+    var hasErrored = false;
+    var isOffline = false;
+    var updateLoadingProgress = function (data) {
+        if (!built || !data) { return; }
+
+        // If we receive a "offline" event, show the warning text
+        if (data.type === "offline") {
+            try {
+                isOffline = true;
+                document.querySelector('#cp-loading-message').setAttribute('style', 'display:block;');
+                document.querySelector('#cp-loading-message').innerText = Messages.offlineError;
+            } catch (e) { console.error(e); }
+            return;
+        }
+
+        // If we receive a new event and we were offline, remove
+        // the offline warning text
+        if (isOffline) {
+            try {
+                isOffline = false;
+                document.querySelector('#cp-loading-message').setAttribute('style', 'display:none;');
+            } catch (e) { console.error(e); }
+        }
+
+        // Make sure progress doesn't go backward
+        var c = types.indexOf(data.type);
+        if (c < current) { return console.debug(data); }
+        if (c === current && progress > data.progress) { return console.debug(data); }
+        progress = data.progress;
+
+        try {
+            var el1 = document.querySelector('.cp-loading-spinner-container');
+            if (el1) { el1.style.display = 'none'; }
+            var el2 = document.querySelector('.cp-loading-progress-list');
+            if (el2) { el2.innerHTML = makeList(data); }
+            var el3 = document.querySelector('.cp-loading-progress-container');
+            if (el3) { el3.innerHTML = makeBar(data); }
+        } catch (e) {
+            //if (!hasErrored) { console.error(e); }
+        }
+    };
+    window.CryptPad_updateLoadingProgress = updateLoadingProgress;
+
+    window.CryptPad_loadingError = function (err) {
+        if (!built) { return; }
+
+        if (err === 'Error: XDR encoding failure') {
+            console.warn(err);
+            return;
+        }
+
+        hasErrored = true;
+        var err2;
+        if (err === 'Script error.') {
+            err2 = Messages.error_unhelpfulScriptError;
+        }
+
+        try {
+            var node = document.querySelector('.cp-loading-progress');
+            if (!node) { return; }
+            if (node.parentNode) { node.parentNode.removeChild(node); }
+            document.querySelector('.cp-loading-spinner-container').setAttribute('style', 'display:none;');
+            document.querySelector('#cp-loading-message').setAttribute('style', 'display:block;');
+            document.querySelector('#cp-loading-message').innerText = err2 || err;
+        } catch (e) { console.error(e); }
+    };
     return function () {
+        built = true;
         var intr;
         var append = function () {
             if (!document.body) { return; }

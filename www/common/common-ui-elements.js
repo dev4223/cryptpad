@@ -20,20 +20,14 @@ define([
 ], function ($, Config, Util, Hash, Language, UI, Constants, Feedback, h, Clipboard,
              Messages, AppConfig, Pages, NThen, InviteInner, Visible) {
     var UIElements = {};
+    var urlArgs = Config.requireConf.urlArgs;
 
     UIElements.getSvgLogo = function () {
         var svg = (function(){/*
-<svg width="45" height="50" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:cc="http://creativecommons.org/ns#" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
- <metadata>
-  <rdf:RDF>
-   <cc:Work rdf:about="">
-    <dc:format>image/svg+xml</dc:format>
-    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
-    <dc:title/>
-   </cc:Work>
-  </rdf:RDF>
- </metadata>
- <path d="m22.422 1.4356-14.641 2.7035c-0.51734-0.36799-1.1561-0.57696-1.8393-0.57696a3.1356 3.1339 0 0 0-3.1373 3.1355 3.1602 3.1585 0 0 0 1.6227 2.7575v21.103c0 1.9871 0.88906 4.1328 2.6508 6.3801 1.5602 1.9878 3.7668 4.027 6.5635 6.0547 1.9912 1.4389 3.9942 2.6545 5.6782 3.6005a3.1431 3.1413 0 0 0 5.9855 0.12499c1.7264-0.96163 3.8202-2.224 5.8986-3.7254 2.7979-2.0277 5.0033-4.0668 6.5635-6.0547 1.7624-2.2501 2.6508-4.393 2.6508-6.3801v-21.12c0.95814-0.53813 1.622-1.5642 1.622-2.74 0-1.733-1.4213-3.1355-3.1556-3.1355a3.1075 3.1059 0 0 0-1.8028 0.57696zm-0.03584 3.118 13.379 2.4687c0.01952 0.19629 0.03611 0.37448 0.08998 0.55867l-7.8432 5.1004c-1.4028-1.5215-3.4192-2.4877-5.6439-2.4877-2.2404 0-4.2687 0.98212-5.6797 2.5235l-7.7539-5.028c0.071056-0.21736 0.10472-0.44988 0.12659-0.68519zm14.426 4.4869c0.2616 0.22946 0.5738 0.4256 0.90137 0.55867v20.526c0 0.27043-0.02367 0.55955-0.07169 0.84677-0.31548 1.2546-1.0076 2.5682-2.0734 3.9289-1.3362 1.7018-3.231 3.4367-5.6264 5.172-1.9203 1.3873-3.8601 2.5452-5.3983 3.3932a3.1431 3.1413 0 0 0-4.3574-0.06325c-1.5186-0.84169-3.4128-1.979-5.2825-3.3299-2.3934-1.7353-4.2716-3.4702-5.6072-5.172-1.2729-1.6234-2.017-3.1789-2.2176-4.6492v-20.616c0.31859-0.12253 0.60591-0.30939 0.86477-0.52285l9.9357 6.3976a5.0789 5.0761 0 0 1 4.4893-2.685c1.9639 0 3.6499 1.0816 4.4901 2.7027zm-21.812 6.6849c-0.20732 0.69421-0.33324 1.4177-0.33324 2.1767 0 2.1872 0.94799 4.1262 2.4242 5.5287l-2.7125 5.4541c-0.01034-1.35e-4 -0.02017-0.0015-0.03051-0.0015-1.2807 0-2.3266 1.045-2.3266 2.3246 0 1.2799 1.046 2.3063 2.3266 2.3063a2.3009 2.2996 0 0 0 1.7349-0.78198h3.999v-2.6119h-3.3974l3.1938-6.4136c0.27643-0.55529 0.08702-1.2992-0.42094-1.6546-1.3154-0.91704-2.178-2.4154-2.178-4.1499 0-0.22399 0.03023-0.43738 0.05796-0.65318zm14.737 0.01524-2.3518 1.5372c0.02538 0.20682 0.04347 0.40998 0.04347 0.62422 0 1.7288-0.83863 3.2165-2.149 4.1356-0.50796 0.3555-0.69738 1.0994-0.42094 1.6546l3.1655 6.4281h-3.3829v2.6112h4.1363c0.42696 0.47986 1.0501 0.78274 1.744 0.78274a2.3009 2.2996 0 0 0 2.3076-2.3056c0-1.2799-1.0273-2.3253-2.3076-2.3253-0.05792 0-0.1147 0.0049-0.17158 0.0092l-2.7186-5.4769c1.4697-1.401 2.4106-3.3321 2.4106-5.5143 0-0.74898-0.10409-1.475-0.30503-2.1607zm-7.4398 0.2477a2.1129 2.1118 0 0 0-2.078 2.1111 2.1132 2.1119 0 1 0 4.2262 0 2.1129 2.1118 0 0 0-2.1482-2.1111z" style="stroke-width:1.2608"/>
+<svg width="45" height="50" version="1.1" viewBox="0 0 11.906 13.229" xmlns="http://www.w3.org/2000/svg" xmlns:osb="http://www.openswatchbook.org/uri/2009/osb">
+ <path id="squares" d="m1.1842 0.63976 0.078593 5.614h4.693l5.844e-4 -5.614zm4.7749 5.614 4.383e-4 6.2231c1.8161-0.83261 4.6393-2.4183 4.691-6.1113l0.0016-0.11174z" fill-opacity=".39608"/>
+ <path id="outline" d="m0.80493 0.26501 0.004684 0.37943 0.079911 6.475c0.024028 1.9418 0.81004 3.2247 1.8144 4.0729 1.0043 0.84824 2.2063 1.2937 3.0935 1.7018l0.16787 0.0775 0.16377-0.08657c0.7899-0.41719 1.9998-0.86054 3.028-1.6991 1.0282-0.83852 1.8614-2.1164 1.8614-4.0713v-3.689l-3.4016-3.1607zm0.75864 0.74949h5.2426v3.1854h3.4628v2.9148c0 1.7505-0.68311 2.7546-1.5854 3.4905-0.84909 0.69243-1.8906 1.1058-2.7348 1.5342-0.89552-0.40429-1.9335-0.8206-2.7611-1.5196-0.87538-0.73932-1.5269-1.7585-1.5485-3.5098zm5.9918 0.21646 2.3888 2.2196h-2.3888z" color="#000000" color-rendering="auto" dominant-baseline="auto" image-rendering="auto" shape-rendering="auto" solid-color="#000000" stop-color="#000000" style="font-feature-settings:normal;font-variant-alternates:normal;font-variant-caps:normal;font-variant-east-asian:normal;font-variant-ligatures:normal;font-variant-numeric:normal;font-variant-position:normal;font-variation-settings:normal;inline-size:0;isolation:auto;mix-blend-mode:normal;shape-margin:0;shape-padding:0;text-decoration-color:#000000;text-decoration-line:none;text-decoration-style:solid;text-indent:0;text-orientation:mixed;text-transform:none;white-space:normal"/>
+ <path id="keyhole" d="m5.9073 4.8889a1.2769 1.2769 0 0 0-1.276 1.277 1.2769 1.2769 0 0 0 0.72454 1.1513l-0.4458 2.3541h1.9965l-0.4458-2.3541a1.2769 1.2769 0 0 0 0.72447-1.1512 1.2769 1.2769 0 0 0-1.2769-1.277 1.2769 1.2769 0 0 0-9.488e-4 0z" />
 </svg>
 */}).toString().slice(14,-3);
         return svg;
@@ -229,6 +223,7 @@ define([
         };
     };
 
+
     UIElements.noContactsMessage = function (common) {
         var metadataMgr = common.getMetadataMgr();
         var data = metadataMgr.getUserData();
@@ -254,20 +249,15 @@ define([
                     className: 'secondary',
                     name: Messages.login_register,
                     onClick: function () {
-                        common.setLoginRedirect(function () {
-                            common.gotoURL('/register/');
-                        });
+                        common.setLoginRedirect('register');
                     }
                   }, {
                     className: 'secondary',
                     name: Messages.login_login,
                     onClick: function () {
-                        common.setLoginRedirect(function () {
-                            common.gotoURL('/login/');
-                        });
+                        common.setLoginRedirect('login');
                     }
-                  }
-                  ]
+                  }]
             };
         }
     };
@@ -375,7 +365,7 @@ define([
                 h('div.cp-teams-invite-block', [
                     h('span', Messages.team_inviteLinkSetPassword),
                     h('a.cp-teams-help.fa.fa-question-circle', {
-                        href: origin + '/faq.html#security-pad_password',
+                        href: origin + 'https://docs.cryptpad.fr/en/user_guide/security.html#passwords-for-documents-and-folders',
                         target: "_blank",
                         'data-tippy-placement': "right"
                     })
@@ -622,7 +612,7 @@ define([
                 break;
             case 'copy':
                 button = $('<button>', {
-                    'class': 'fa fa-clone cp-toolbar-icon-import',
+                    'class': 'fa fa-files-o cp-toolbar-icon-import',
                 }).append($('<span>', {'class': 'cp-toolbar-drawer-element'}).text(Messages.makeACopy));
                 button
                 .click(common.prepareFeedback(type))
@@ -639,6 +629,7 @@ define([
                 button
                 .click(common.prepareFeedback(type))
                 .click(function () {
+                    if (callback) { return void callback(); }
                     UIElements.openTemplatePicker(common, true);
                 });
                 break;
@@ -1539,10 +1530,17 @@ define([
 
         var legalLine = template(Messages.info_imprintFlavour, Pages.imprintLink);
         var privacyLine = template(Messages.info_privacyFlavour, Pages.privacyLink);
-        var faqLine = template(Messages.help.generic.more, Pages.faqLink);
+
+        var faqLine = template(Messages.help.generic.more, Pages.docsLink);
 
         var content = h('div.cp-info-menu-container', [
-            h('h6', Pages.versionString),
+            h('div.logo-block', [
+                h('img', {
+                    src: '/customize/CryptPad_logo.svg?' + urlArgs
+                }),
+                h('h6', "CryptPad"),
+                h('span', Pages.versionString)
+            ]),
             h('hr'),
             legalLine,
             privacyLine,
@@ -1602,9 +1600,9 @@ define([
                 content: h('span', Messages.profileButton),
                 action: function () {
                     if (padType) {
-                        window.open(origin+'/profile/');
+                        Common.openURL(origin+'/profile/');
                     } else {
-                        window.parent.location = origin+'/profile/';
+                        Common.gotoURL(origin+'/profile/');
                     }
                 },
             });
@@ -1613,33 +1611,36 @@ define([
             options.push({
                 tag: 'a',
                 attributes: {
-                    'target': '_blank',
-                    'href': origin+'/drive/',
                     'class': 'fa fa-hdd-o'
                 },
-                content: h('span', Messages.type.drive)
+                content: h('span', Messages.type.drive),
+                action: function () {
+                    Common.openURL(origin+'/drive/');
+                },
             });
         }
         if (padType !== 'teams' && accountName) {
             options.push({
                 tag: 'a',
                 attributes: {
-                    'target': '_blank',
-                    'href': origin+'/teams/',
                     'class': 'fa fa-users'
                 },
-                content: h('span', Messages.type.teams)
+                content: h('span', Messages.type.teams),
+                action: function () {
+                    Common.openURL('/teams/');
+                },
             });
         }
         if (padType !== 'contacts' && accountName) {
             options.push({
                 tag: 'a',
                 attributes: {
-                    'target': '_blank',
-                    'href': origin+'/contacts/',
                     'class': 'fa fa-address-book'
                 },
-                content: h('span', Messages.type.contacts)
+                content: h('span', Messages.type.contacts),
+                action: function () {
+                    Common.openURL('/contacts/');
+                },
             });
         }
         if (padType !== 'settings') {
@@ -1649,9 +1650,9 @@ define([
                 content: h('span', Messages.settingsButton),
                 action: function () {
                     if (padType) {
-                        window.open(origin+'/settings/');
+                        Common.openURL(origin+'/settings/');
                     } else {
-                        window.parent.location = origin+'/settings/';
+                        Common.gotoURL(origin+'/settings/');
                     }
                 },
             });
@@ -1666,13 +1667,23 @@ define([
                 content: h('span', Messages.adminPage || 'Admin'),
                 action: function () {
                     if (padType) {
-                        window.open(origin+'/admin/');
+                        Common.openURL(origin+'/admin/');
                     } else {
-                        window.parent.location = origin+'/admin/';
+                        Common.gotoURL(origin+'/admin/');
                     }
                 },
             });
         }
+        options.push({
+            tag: 'a',
+            attributes: {
+                'target': '_blank',
+                'rel': 'noopener',
+                'href': 'https://docs.cryptpad.fr',
+                'class': 'fa fa-book'
+            },
+            content: h('span', Messages.docs_link)
+        });
         if (padType !== 'support' && accountName && Config.supportMailbox) {
             options.push({
                 tag: 'a',
@@ -1680,28 +1691,28 @@ define([
                 content: h('span', Messages.supportPage || 'Support'),
                 action: function () {
                     if (padType) {
-                        window.open(origin+'/support/');
+                        Common.openURL(origin+'/support/');
                     } else {
-                        window.parent.location = origin+'/support/';
+                        Common.gotoURL(origin+'/support/');
                     }
                 },
             });
         }
+/*
         if (AppConfig.surveyURL) {
             options.push({
                 tag: 'a',
                 attributes: {
-                    'target': '_blank',
-                    'rel': 'noopener',
-                    'href': AppConfig.surveyURL,
                     'class': 'cp-toolbar-survey fa fa-graduation-cap'
                 },
                 content: h('span', Messages.survey),
                 action: function () {
+                    Common.openUnsafeURL(AppConfig.surveyURL);
                     Feedback.send('SURVEY_CLICKED');
                 },
             });
         }
+*/
         options.push({
             tag: 'a',
             attributes: {
@@ -1716,11 +1727,12 @@ define([
         options.push({
             tag: 'a',
             attributes: {
-                'target': '_blank',
-                'href': origin+'/index.html',
                 'class': 'fa fa-home'
             },
-            content: h('span', Messages.homePage)
+            content: h('span', Messages.homePage),
+            action: function () {
+                Common.openURL('/index.html');
+            },
         });
         // Add the change display name button if not in read only mode
         /*
@@ -1736,23 +1748,24 @@ define([
             options.push({
                 tag: 'a',
                 attributes: {
-                    'target': '_blank',
-                    'href': priv.plan ? priv.accounts.upgradeURL : origin+'/features.html',
                     'class': 'fa fa-star-o'
                 },
-                content: h('span', priv.plan ? Messages.settings_cat_subscription : Messages.pricing)
+                content: h('span', priv.plan ? Messages.settings_cat_subscription : Messages.pricing),
+                action: function () {
+                    Common.openURL(priv.plan ? priv.accounts.upgradeURL :'/features.html');
+                },
             });
         }
         if (!priv.plan && !Config.removeDonateButton) {
             options.push({
                 tag: 'a',
                 attributes: {
-                    'target': '_blank',
-                    'rel': 'noopener',
-                    'href': priv.accounts.donateURL,
                     'class': 'fa fa-gift'
                 },
-                content: h('span', Messages.crowdfunding_button2)
+                content: h('span', Messages.crowdfunding_button2),
+                action: function () {
+                    Common.openUnsafeURL(priv.accounts.donateURL);
+                },
             });
         }
 
@@ -1767,7 +1780,7 @@ define([
                 content: h('span', Messages.logoutEverywhere),
                 action: function () {
                     Common.getSframeChannel().query('Q_LOGOUT_EVERYWHERE', null, function () {
-                        window.parent.location = origin + '/';
+                        Common.gotoURL(origin + '/');
                     });
                 },
             });
@@ -1777,7 +1790,7 @@ define([
                 content: h('span', Messages.logoutButton),
                 action: function () {
                     Common.logout(function () {
-                        window.parent.location = origin+'/';
+                        Common.gotoURL(origin+'/');
                     });
                 },
             });
@@ -1787,9 +1800,7 @@ define([
                 attributes: {'class': 'cp-toolbar-menu-login fa fa-sign-in'},
                 content: h('span', Messages.login_login),
                 action: function () {
-                    Common.setLoginRedirect(function () {
-                        window.parent.location = origin+'/login/';
-                    });
+                    Common.setLoginRedirect('login');
                 },
             });
             options.push({
@@ -1797,9 +1808,7 @@ define([
                 attributes: {'class': 'cp-toolbar-menu-register fa fa-user-plus'},
                 content: h('span', Messages.login_register),
                 action: function () {
-                    Common.setLoginRedirect(function () {
-                        window.parent.location = origin+'/register/';
-                    });
+                    Common.setLoginRedirect('register');
                 },
             });
         }
@@ -1924,8 +1933,6 @@ define([
         $modal.find('.cp-modal').append($title);
         $modal.find('.cp-modal').append($description);
 
-        var $advanced;
-
         var $container = $('<div>');
         var i = 0;
         var types = AppConfig.availablePadTypes.filter(function (p) {
@@ -1949,15 +1956,7 @@ define([
             $element.attr('data-type', p);
             $element.click(function () {
                 $modal.hide();
-                if ($advanced && Util.isChecked($advanced)) {
-                    common.sessionStorage.put(Constants.displayPadCreationScreen, true, function (){
-                        common.openURL('/' + p + '/');
-                    });
-                    return;
-                }
-                common.sessionStorage.put(Constants.displayPadCreationScreen, "", function () {
-                    common.openURL('/' + p + '/');
-                });
+                common.openURL('/' + p + '/');
             });
         });
 
@@ -1981,12 +1980,6 @@ define([
                     $container.find('.cp-icons-element-selected').click();
                 }
                 return;
-            }
-            if (e.which === 32 && $advanced) {
-                $advanced.prop('checked', !$advanced.prop('checked'));
-                $modal.focus();
-                e.stopPropagation();
-                e.preventDefault();
             }
         });
 
@@ -2094,21 +2087,38 @@ define([
         var sframeChan = common.getSframeChannel();
         var metadataMgr = common.getMetadataMgr();
         var privateData = metadataMgr.getPrivateData();
-        var type = metadataMgr.getMetadataLazy().type;
+        var type = metadataMgr.getMetadataLazy().type || privateData.app;
         var fromFileData = privateData.fromFileData;
 
         var $body = $('body');
         var $creationContainer = $('<div>', { id: 'cp-creation-container' }).appendTo($body);
         var urlArgs = (Config.requireConf && Config.requireConf.urlArgs) || '';
-        var l = h('div.cp-creation-logo', h('img', { src: '/customize/loading-logo.png?' + urlArgs }));
-        $(l).appendTo($creationContainer);
-        var $creation = $('<div>', { id: 'cp-creation', tabindex: 1 }).appendTo($creationContainer);
+
+        var logo = h('img', { src: '/customize/CryptPad_logo.svg?' + urlArgs });
+        var fill1 = h('div.cp-creation-fill.cp-creation-logo', logo);
+        var fill2 = h('div.cp-creation-fill');
+        var $creation = $('<div>', { id: 'cp-creation', tabindex:1 });
+        $creationContainer.append([fill1, $creation, fill2]);
+
+        var createHelper = function (href, text) {
+            var q = UI.createHelper(href, text);
+            $(q).addClass('cp-creation-help');
+            return q;
+        };
 
         // Title
-        //var colorClass = 'cp-icon-color-'+type;
         //$creation.append(h('h2.cp-creation-title', Messages.newButtonTitle));
         var newPadH3Title = Messages['button_new' + type];
-        $creation.append(h('h3.cp-creation-title', newPadH3Title));
+
+        var title = h('div.cp-creation-title', [
+            UI.getFileIcon({type: type})[0],
+            h('div.cp-creation-title-text', [
+                h('span', newPadH3Title),
+                createHelper('https://docs.cryptpad.fr/en/user_guide/apps/general.html#new-document', Messages.creation_helperText)
+            ])
+        ]);
+        $creation.append(title);
+        //var colorClass = 'cp-icon-color-'+type;
         //$creation.append(h('h2.cp-creation-title.'+colorClass, Messages.newButtonTitle));
 
         // Deleted pad warning
@@ -2117,18 +2127,6 @@ define([
                 h('div.cp-creation-deleted', Messages.creation_404)
             ));
         }
-
-        var origin = privateData.origin;
-        var createHelper = function (href, text) {
-            var q = h('a.cp-creation-help.fa.fa-question-circle', {
-                'data-cptippy-html': true,
-                title: text,
-                href: origin + href,
-                target: "_blank",
-                'data-tippy-placement': "right"
-            });
-            return q;
-        };
 
         // Team pad
         var team;
@@ -2184,12 +2182,13 @@ define([
         // Default is Owned pad
         var owned = h('div.cp-creation-owned', [
             UI.createCheckbox('cp-creation-owned', Messages.creation_owned, true),
-            createHelper('/faq.html#keywords-owned', Messages.creation_owned1)
         ]);
 
         // Life time
         var expire = h('div.cp-creation-expire', [
-            UI.createCheckbox('cp-creation-expire', Messages.creation_expire, false),
+            UI.createCheckbox('cp-creation-expire', Messages.creation_expiration, false, {
+                labelAlt: Messages.creation_expiresIn
+            }),
             h('span.cp-creation-expire-picker.cp-creation-slider', [
                 h('input#cp-creation-expire-val', {
                     type: "number",
@@ -2206,7 +2205,6 @@ define([
                     }, Messages.creation_expireMonths)
                 ])
             ]),
-            createHelper('/faq.html#keywords-expiring', Messages.creation_expire2),
         ]);
 
         // Password
@@ -2221,8 +2219,15 @@ define([
             //createHelper('#', "TODO: password protection adds another layer of security ........") // TODO
         ]);
 
+        var $w = $(window);
+        var big = $w.width() > 800;
+
         var right = h('span.fa.fa-chevron-right.cp-creation-template-more');
         var left = h('span.fa.fa-chevron-left.cp-creation-template-more');
+        if (!big) {
+            $(left).removeClass('fa-chevron-left').addClass('fa-chevron-up');
+            $(right).removeClass('fa-chevron-right').addClass('fa-chevron-down');
+        }
         var templates = h('div.cp-creation-template', [
             left,
             h('div.cp-creation-template-container', [
@@ -2235,10 +2240,12 @@ define([
         var $create = $(createDiv);
 
         $(h('div#cp-creation-form', [
-            team,
-            owned,
-            expire,
-            password,
+            h('div.cp-creation-checkboxes', [
+                team,
+                owned,
+                expire,
+                password,
+            ]),
             templates,
             createDiv
         ])).appendTo($creation);
@@ -2246,7 +2253,7 @@ define([
         // Display templates
 
         var selected = 0; // Selected template in the list (highlighted)
-        var TEMPLATES_DISPLAYED = 4; // Max templates displayed per page
+        var TEMPLATES_DISPLAYED = big ? 6 : 3; // Max templates displayed per page
         var next = function () {}; // Function called when pressing tab to highlight the next template
         var i = 0; // Index of the first template displayed in the current page
         sframeChan.query("Q_CREATE_TEMPLATES", type, function (err, res) {
@@ -2269,12 +2276,14 @@ define([
                     icon: h('span.cptools.cptools-new-template')
                 });
             }
-            allData.unshift({
-                name: Messages.creation_noTemplate,
-                id: 0,
-                //icon: h('span.fa.fa-file')
-                icon: UI.getFileIcon({type: type})
-            });
+            if (!privateData.newTemplate) {
+                allData.unshift({
+                    name: Messages.creation_noTemplate,
+                    id: 0,
+                    //icon: h('span.fa.fa-file')
+                    icon: UI.getFileIcon({type: type})
+                });
+            }
             var redraw = function (index) {
                 if (index < 0) { i = 0; }
                 else if (index > allData.length - 1) { return; }
@@ -2358,6 +2367,20 @@ define([
                     .addClass('cp-creation-template-selected');
             };
 
+            $w.on('resize', function () {
+                var _big = $w.width() > 800;
+                if (big === _big) { return; }
+                big = _big;
+                if (!big) {
+                    $(left).removeClass('fa-chevron-left').addClass('fa-chevron-up');
+                    $(right).removeClass('fa-chevron-right').addClass('fa-chevron-down');
+                } else {
+                    $(left).removeClass('fa-chevron-up').addClass('fa-chevron-left');
+                    $(right).removeClass('fa-chevron-down').addClass('fa-chevron-right');
+                }
+                TEMPLATES_DISPLAYED = big ? 6 : 3;
+                redraw(0);
+            });
         });
 
         // Display expiration form when checkbox checked
@@ -2531,10 +2554,16 @@ define([
 
         var submit = function () {
             var value = $password.find('.cp-password-input').val();
-            UI.addLoadingScreen();
+            UI.addLoadingScreen({newProgress: true});
+            if (window.CryptPad_updateLoadingProgress) {
+                window.CryptPad_updateLoadingProgress({
+                    type: 'pad',
+                    progress: 0
+                });
+            }
             common.getSframeChannel().query('Q_PAD_PASSWORD_VALUE', value, function (err, data) {
                 if (!data) {
-                    UIElements.displayPasswordPrompt(common, cfg, true);
+                    return void UIElements.displayPasswordPrompt(common, cfg, true);
                 }
             });
         };
@@ -2565,7 +2594,9 @@ define([
 
         var block = h('div#cp-loading-burn-after-reading', [
             info,
-            button
+            h('nav', {
+                style: 'text-align: right'
+            }, button),
         ]);
         UI.errorLoadingScreen(block);
     };
@@ -2700,6 +2731,43 @@ define([
 
     };
 
+    UIElements.displayTrimHistoryPrompt = function (common, data) {
+        var mb = Util.bytesToMegabytes(data.size);
+        var text = Messages._getKey('history_trimPrompt', [
+            Messages._getKey('formattedMB', [mb])
+        ]);
+        var yes = h('button.cp-corner-primary', [
+            h('span.fa.fa-trash-o'),
+            Messages.trimHistory_button
+        ]);
+        var no = h('button.cp-corner-cancel', Messages.crowdfunding_popup_no); // Not now
+        var actions = h('div', [no, yes]);
+
+        var dontShowAgain = function () {
+            var until = (+new Date()) + (7 * 24 * 3600 * 1000); // 7 days from now
+            if (data.drive) {
+                common.setAttribute(['drive', 'trim'], until);
+                return;
+            }
+            common.setPadAttribute('trim', until);
+        };
+
+        var modal = UI.cornerPopup(text, actions, '', {});
+
+        $(yes).click(function () {
+            modal.delete();
+            if (data.drive) {
+                common.openURL('/settings/#drive');
+                return;
+            }
+            common.getSframeChannel().event('EV_PROPERTIES_OPEN');
+        });
+        $(no).click(function () {
+            dontShowAgain();
+            modal.delete();
+        });
+    };
+
     UIElements.displayFriendRequestModal = function (common, data) {
         var msg = data.content.msg;
         var userData = msg.content.user;
@@ -2744,13 +2812,8 @@ define([
         $(link).click(function (e) {
             e.preventDefault();
             e.stopPropagation();
-            if (msg.content.password) {
-                common.sessionStorage.put('newPadPassword', msg.content.password, function () {
-                    common.openURL(msg.content.href);
-                });
-                return;
-            }
-            common.openURL(msg.content.href);
+            var obj = { pw: msg.content.password || '' };
+            common.openURL(Hash.getNewPadURL(msg.content.href, obj));
         });
 
         var div = h('div', [

@@ -221,6 +221,10 @@ define([
                     evStart.reg(function () { toolbar.deleted(); });
                     break;
                 }
+                case STATE.READY: {
+                    evStart.reg(function () { toolbar.ready(); });
+                    break;
+                }
                 default:
             }
             var isEditable = (state === STATE.READY && !unsyncMode);
@@ -441,9 +445,9 @@ define([
         var versionHashEl;
         var onInit = function () {
             UI.updateLoadingProgress({
-                state: 2,
+                type: 'pad',
                 progress: 0.1
-            }, false);
+            });
             stateChange(STATE.INITIALIZING);
             if ($('.cp-help-container').length) {
                 var privateDat = cpNfInner.metadataMgr.getPrivateData();
@@ -467,11 +471,53 @@ define([
             });
         };
 
+        var noCache = false; // Prevent reload loops
+        var onCorruptedCache = function () {
+            if (noCache) {
+                UI.errorLoadingScreen(Messages.unableToDisplay, false, function () {
+                    common.gotoURL('');
+                });
+            }
+            noCache = true;
+            var sframeChan = common.getSframeChannel();
+            sframeChan.event("EV_CORRUPTED_CACHE");
+        };
+        var onCacheReady = function () {
+            stateChange(STATE.INITIALIZING);
+            toolbar.offline(true);
+            var newContentStr = cpNfInner.chainpad.getUserDoc();
+            if (toolbar) {
+                // Check if we have a new chainpad instance
+                toolbar.resetChainpad(cpNfInner.chainpad);
+            }
+
+            // Invalid cache
+            if (newContentStr === '') { return void onCorruptedCache(); }
+
+            var privateDat = cpNfInner.metadataMgr.getPrivateData();
+            var type = privateDat.app;
+
+            var newContent = JSON.parse(newContentStr);
+            var metadata = extractMetadata(newContent);
+
+            // Make sure we're using the correct app for this cache
+            if (metadata && typeof(metadata.type) !== 'undefined' && metadata.type !== type) {
+                return void onCorruptedCache();
+            }
+
+            cpNfInner.metadataMgr.updateMetadata(metadata);
+            newContent = normalize(newContent);
+            if (!unsyncMode) {
+                contentUpdate(newContent, function () { return function () {}; });
+            }
+
+            UI.removeLoadingScreen(emitResize);
+        };
         var onReady = function () {
+            toolbar.offline(false);
+
             var newContentStr = cpNfInner.chainpad.getUserDoc();
             if (state === STATE.DELETED) { return; }
-
-            UI.updateLoadingProgress({ state: -1 }, false);
 
             if (toolbar) {
                 // Check if we have a new chainpad instance
@@ -483,7 +529,6 @@ define([
 
             var privateDat = cpNfInner.metadataMgr.getPrivateData();
             var type = privateDat.app;
-
 
             // contentUpdate may be async so we need an nthen here
             nThen(function (waitFor) {
@@ -510,14 +555,19 @@ define([
                         console.log("Either this is an empty document which has not been touched");
                         console.log("Or else something is terribly wrong, reloading.");
                         Feedback.send("NON_EMPTY_NEWDOC");
-                        setTimeout(function () { common.gotoURL(); }, 1000);
+                        // The cache may be wrong, empty it and reload after.
+                        waitFor.abort();
+                        onCorruptedCache();
                         return;
                     }
-                    console.log('updating title');
                     title.updateTitle(title.defaultTitle);
                     evOnDefaultContentNeeded.fire();
                 }
             }).nThen(function () {
+                // We have a valid chainpad, reenable cache fix in case with reconnect with
+                // a corrupted cache
+                noCache = false;
+
                 stateChange(STATE.READY);
                 firstConnection = false;
 
@@ -553,6 +603,8 @@ define([
                         Thumb.initPadThumbnails(common, options.thumbnail);
                     }
                 }
+
+                common.checkTrimHistory();
             });
         };
         var onConnectionChange = function (info) {
@@ -708,9 +760,6 @@ define([
         nThen(function (waitFor) {
             UI.addLoadingScreen();
             SFCommon.create(waitFor(function (c) { common = c; }));
-            UI.updateLoadingProgress({
-                state: 1
-            }, false);
         }).nThen(function (waitFor) {
             common.getSframeChannel().onReady(waitFor());
         }).nThen(function (waitFor) {
@@ -737,6 +786,7 @@ define([
                 onRemote: onRemote,
                 onLocal: onLocal,
                 onInit: onInit,
+                onCacheReady: function () { evStart.reg(onCacheReady); },
                 onReady: function () { evStart.reg(onReady); },
                 onConnectionChange: onConnectionChange,
                 onError: onError,

@@ -11,6 +11,7 @@ define([
     '/common/sframe-common-codemirror.js',
     '/common/sframe-common-cursor.js',
     '/common/sframe-common-mailbox.js',
+    '/common/inner/cache.js',
     '/common/inner/common-mediatag.js',
     '/common/metadata-manager.js',
 
@@ -36,6 +37,7 @@ define([
     CodeMirror,
     Cursor,
     Mailbox,
+    Cache,
     MT,
     MetadataMgr,
     AppConfig,
@@ -142,7 +144,7 @@ define([
         }
         return;
     };
-    funcs.importMediaTag = function ($mt) {
+    var getMtData = function ($mt) {
         if (!$mt || !$mt.is('media-tag')) { return; }
         var chanStr = $mt.attr('src');
         var keyStr = $mt.attr('data-crypto-key');
@@ -154,10 +156,27 @@ define([
         var channel = src.replace(/\/blob\/[0-9a-f]{2}\//i, '');
         // Get key
         var key = keyStr.replace(/cryptpad:/i, '');
+        return {
+            channel: channel,
+            key: key
+        };
+    };
+    funcs.getHashFromMediaTag = function ($mt) {
+        var data = getMtData($mt);
+        if (!data) { return; }
+        return Hash.getFileHashFromKeys({
+            version: 1,
+            channel: data.channel,
+            keys: { fileKeyStr: data.key }
+        });
+    };
+    funcs.importMediaTag = function ($mt) {
+        var data = getMtData($mt);
+        if (!data) { return; }
         var metadata = $mt[0]._mediaObject._blob.metadata;
         ctx.sframeChan.query('Q_IMPORT_MEDIATAG', {
-            channel: channel,
-            key: key,
+            channel: data.channel,
+            key: data.key,
             name: metadata.name,
             type: metadata.type,
             owners: metadata.owners
@@ -166,15 +185,24 @@ define([
         });
     };
 
-    funcs.getFileSize = function (channelId, cb) {
-        funcs.sendAnonRpcMsg("GET_FILE_SIZE", channelId, function (data) {
-            if (!data) { return void cb("No response"); }
-            if (data.error) { return void cb(data.error); }
-            if (data.response && data.response.length && typeof(data.response[0]) === 'number') {
-                return void cb(void 0, data.response[0]);
-            } else {
-                cb('INVALID_RESPONSE');
-            }
+    funcs.getFileSize = function (channelId, cb, noCache) {
+        nThen(function (waitFor) {
+            if (channelId.length < 48 || noCache) { return; }
+            ctx.cache.getBlobCache(channelId, waitFor(function(err, blob) {
+                if (err) { return; }
+                waitFor.abort();
+                cb(null, blob.length);
+            }));
+        }).nThen(function () {
+            funcs.sendAnonRpcMsg("GET_FILE_SIZE", channelId, function (data) {
+                if (!data) { return void cb("No response"); }
+                if (data.error) { return void cb(data.error); }
+                if (data.response && data.response.length && typeof(data.response[0]) === 'number') {
+                    return void cb(void 0, data.response[0]);
+                } else {
+                    cb('INVALID_RESPONSE');
+                }
+            });
         });
     };
 
@@ -264,6 +292,65 @@ define([
         return teamChatChannel;
     };
 
+    // When opening a pad, if were an owner check the history size and prompt for trimming if
+    // necessary
+    funcs.checkTrimHistory = function (channels, isDrive) {
+        channels = channels || [];
+        var priv = ctx.metadataMgr.getPrivateData();
+
+        var limit = 100 * 1024 * 1024; // 100MB
+
+        var owned;
+        nThen(function (w) {
+            if (isDrive) {
+                funcs.getAttribute(['drive', 'trim'], w(function (err, val) {
+                    if (err || typeof(val) !== "number") { return; }
+                    if (val < (+new Date())) { return; }
+                    w.abort();
+                }));
+                return;
+            }
+            funcs.getPadAttribute('trim', w(function (err, val) {
+                if (err || typeof(val) !== "number") { return; }
+                if (val < (+new Date())) { return; }
+                w.abort();
+            }));
+        }).nThen(function (w) {
+            // Check ownership
+            // DRIVE
+            if (isDrive) {
+                if (!priv.isDriveOwned) { return void w.abort(); }
+                return;
+            }
+            // PAD
+            channels.push({ channel: priv.channel });
+            funcs.getPadMetadata({
+                channel: priv.channel
+            }, w(function (md) {
+                if (md && md.error) { return void w.abort(); }
+                var owners = md.owners;
+                owned = funcs.isOwned(owners);
+                if (!owned) { return void w.abort(); }
+            }));
+        }).nThen(function () {
+            // We're an owner: check the history size
+            var history = funcs.makeUniversal('history');
+            history.execCommand('GET_HISTORY_SIZE', {
+                account: isDrive,
+                pad: !isDrive,
+                channels: channels,
+                teamId: typeof(owned) === "number" && owned
+            }, function (obj) {
+                if (obj && obj.error) { return; } // can't get history size: abort
+                var bytes = obj.size;
+                if (!bytes || typeof(bytes) !== "number") { return; } // no history: abort
+                if (bytes < limit) { return; }
+                obj.drive = isDrive;
+                UIElements.displayTrimHistoryPrompt(funcs, obj);
+            });
+        });
+    };
+
     var cursorChannel;
     // common-ui-elements needs to be able to get the cursor channel to put it in metadata when
     // importing a template
@@ -307,9 +394,8 @@ define([
         ctx.sframeChan.event('EV_SET_HASH', hash);
     };
 
-    funcs.setLoginRedirect = function (cb) {
-        cb = cb || $.noop;
-        ctx.sframeChan.query('Q_SET_LOGIN_REDIRECT', null, cb);
+    funcs.setLoginRedirect = function (page) {
+        ctx.sframeChan.query('EV_SET_LOGIN_REDIRECT', page);
     };
 
     funcs.isPresentUrl = function (cb) {
@@ -345,7 +431,13 @@ define([
         }
         if (priv.burnAfterReading) {
             UIElements.displayBurnAfterReadingPage(funcs, waitFor(function () {
-                UI.addLoadingScreen();
+                UI.addLoadingScreen({newProgress: true});
+                if (window.CryptPad_updateLoadingProgress) {
+                    window.CryptPad_updateLoadingProgress({
+                        type: 'pad',
+                        progress: 0
+                    });
+                }
                 ctx.sframeChan.event('EV_BURN_AFTER_READING');
             }));
         }
@@ -457,15 +549,6 @@ define([
         });
     };
 
-    funcs.sessionStorage = {
-        put: function (key, value, cb) {
-            ctx.sframeChan.query('Q_SESSIONSTORAGE_PUT', {
-                key: key,
-                value: value
-            }, cb);
-        }
-    };
-
     funcs.setDisplayName = function (name, cb) {
         cb = cb || $.noop;
         ctx.sframeChan.query('Q_SETTINGS_SET_DISPLAY_NAME', name, cb);
@@ -532,6 +615,10 @@ define([
         });
     };
 
+    funcs.getCache = function () {
+        return ctx.cache;
+    };
+
 /*    funcs.storeLinkToClipboard = function (readOnly, cb) {
         ctx.sframeChan.query('Q_STORE_LINK_TO_CLIPBOARD', readOnly, function (err) {
             if (cb) { cb(err); }
@@ -555,7 +642,14 @@ define([
 
     funcs.gotoURL = function (url) { ctx.sframeChan.event('EV_GOTO_URL', url); };
     funcs.openURL = function (url) { ctx.sframeChan.event('EV_OPEN_URL', url); };
+    funcs.getBounceURL = function (url) {
+        return window.location.origin + '/bounce/#' + encodeURIComponent(url);
+    };
     funcs.openUnsafeURL = function (url) {
+        var app = ctx.metadataMgr.getPrivateData().app;
+        if (app === "sheet") {
+            return void ctx.sframeChan.event('EV_OPEN_UNSAFE_URL', url);
+        }
         var bounceHref = window.location.origin + '/bounce/#' + encodeURIComponent(url);
         window.open(bounceHref);
     };
@@ -619,6 +713,13 @@ define([
         }
         window.CryptPad_sframe_common = true;
 
+        if (window.CryptPad_updateLoadingProgress) {
+            window.CryptPad_updateLoadingProgress({
+                type: 'drive',
+                progress: 0
+            });
+        }
+
         nThen(function (waitFor) {
             var msgEv = Util.mkEvent();
             var iframe = window.parent;
@@ -657,7 +758,7 @@ define([
                     window.cryptpadStore._put(k, v, cb);
                     var x = {};
                     x[k] = v;
-                    ctx.sframeChan.event('EV_LOCALSTORE_PUT', x);
+                    ctx.sframeChan.event('EV_LOCALSTORE_PUT', x, {raw:true});
                 };
             });
 
@@ -679,6 +780,10 @@ define([
                 UI.errorLoadingScreen(Messages.password_error_seed);
             });
 
+            ctx.sframeChan.on("EV_POPUP_BLOCKED", function () {
+                UI.alert(Messages.errorPopupBlocked);
+            });
+
             ctx.sframeChan.on("EV_EXPIRED_ERROR", function () {
                 funcs.onServerError({
                     type: 'EEXPIRED'
@@ -686,7 +791,8 @@ define([
             });
 
             ctx.sframeChan.on('EV_LOADING_INFO', function (data) {
-                UI.updateLoadingProgress(data, 'drive');
+                //UI.updateLoadingProgress(data, 'drive');
+                UI.updateLoadingProgress(data);
             });
 
             ctx.sframeChan.on('EV_NEW_VERSION', function () {
@@ -722,16 +828,36 @@ define([
                 modules[type].onEvent(obj.data);
             });
 
+            ctx.cache = Cache.create(ctx.sframeChan);
+
             ctx.metadataMgr.onReady(waitFor());
 
         }).nThen(function () {
             var privateData = ctx.metadataMgr.getPrivateData();
             funcs.addShortcuts(window, Boolean(privateData.app));
 
+            var mt = Util.find(privateData, ['settings', 'general', 'mediatag-size']);
+            if (MT.MediaTag && typeof(mt) === "number") {
+                var maxMtSize = mt === -1 ? Infinity : mt * 1024 * 1024;
+                MT.MediaTag.setDefaultConfig('maxDownloadSize', maxMtSize);
+            }
+
+            if (MT.MediaTag && ctx.cache) {
+                MT.MediaTag.setDefaultConfig('Cache', ctx.cache);
+            }
+
             try {
                 var feedback = privateData.feedbackAllowed;
                 Feedback.init(feedback);
             } catch (e) { Feedback.init(false); }
+
+            if (privateData.secureIframe) {
+                UI.log = function (msg) { ctx.sframeChan.event('EV_ALERTIFY_LOG', msg); };
+                UI.warn = function (msg) { ctx.sframeChan.event('EV_ALERTIFY_WARN', msg); };
+            } else {
+                ctx.sframeChan.on('EV_ALERTIFY_LOG', function (msg) { UI.log(msg); });
+                ctx.sframeChan.on('EV_ALERTIFY_WARN', function (msg) { UI.warn(msg); });
+            }
 
             try {
                 var forbidden = privateData.disabledApp;
@@ -744,9 +870,7 @@ define([
                 var mustLogin = privateData.registeredOnly;
                 if (mustLogin) {
                     UI.alert(Messages.mustLogin, function () {
-                        funcs.setLoginRedirect(function () {
-                            funcs.gotoURL('/login/');
-                        });
+                        funcs.setLoginRedirect('login');
                     }, {forefront: true});
                     return;
                 }

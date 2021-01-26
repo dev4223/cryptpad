@@ -3,6 +3,7 @@ define([
     '/customize/messages.js',
     '/common/common-util.js',
     '/common/common-hash.js',
+    '/common/outer/cache-store.js',
     '/common/common-messaging.js',
     '/common/common-constants.js',
     '/common/common-feedback.js',
@@ -14,7 +15,7 @@ define([
 
     '/customize/application_config.js',
     '/bower_components/nthen/index.js',
-], function (Config, Messages, Util, Hash,
+], function (Config, Messages, Util, Hash, Cache,
             Messaging, Constants, Feedback, Visible, UserObject, LocalStore, Channel, Block,
             AppConfig, Nthen) {
 
@@ -68,6 +69,38 @@ define([
         }, cb);
     };
 
+    common.getAccessKeys = function (cb) {
+        var keys = [];
+        Nthen(function (waitFor) {
+            // Push account keys
+            postMessage("GET", {
+                key: ['edPrivate'],
+            }, waitFor(function (obj) {
+                if (obj.error) { return; }
+                try {
+                    keys.push({
+                        edPrivate: obj,
+                        edPublic: Hash.getSignPublicFromPrivate(obj)
+                    });
+                } catch (e) { console.error(e); }
+            }));
+            // Push teams keys
+            postMessage("GET", {
+                key: ['teams'],
+            }, waitFor(function (obj) {
+                if (obj.error) { return; }
+                Object.keys(obj || {}).forEach(function (id) {
+                    var t = obj[id];
+                    var _keys = t.keys.drive || {};
+                    if (!_keys.edPrivate) { return; }
+                    keys.push(t.keys.drive);
+                });
+            }));
+        }).nThen(function () {
+            cb(keys);
+        });
+    };
+
     common.makeNetwork = function (cb) {
         require([
             '/bower_components/netflux-websocket/netflux-client.js',
@@ -115,6 +148,36 @@ define([
         };
         send();
     };
+    common.fixRosterHash = function () {
+        // Push teams keys
+        postMessage("GET", {
+            key: ['teams'],
+        }, function (obj) {
+            if (obj.error) { return console.error(obj.error); }
+            Object.keys(obj || {}).forEach(function (id) {
+                postMessage("SET", {
+                    key: ['teams', id, 'keys', 'roster', 'lastKnownHash'],
+                    value: ''
+                }, function () {
+                    console.log('done, please close all your CryptPad tabs before testing the fix');
+                });
+            });
+        });
+    };
+
+    (function () {
+        var bypassHashChange = function (key) {
+            return function (value) {
+                var ohc = window.onhashchange;
+                window.onhashchange = function () {};
+                window.location[key] = value;
+                window.onhashchange = ohc;
+                ohc({reset: true});
+            };
+        };
+        common.setTabHref = bypassHashChange('href');
+        common.setTabHash = bypassHashChange('hash');
+    }());
 
     // RESTRICTED
     // Settings only
@@ -390,10 +453,35 @@ define([
         });
     };
 
-    common.getFileSize = function (href, password, cb) {
-        postMessage("GET_FILE_SIZE", {href: href, password: password}, function (obj) {
-            if (obj && obj.error) { return void cb(obj.error); }
-            cb(undefined, obj.size);
+    common.getFileSize = function (href, password, _cb) {
+        var cb = Util.once(Util.mkAsync(_cb));
+        var channel = Hash.hrefToHexChannelId(href, password);
+        var error;
+        Nthen(function (waitFor) {
+            // Blobs can't change, if it's in the cache, use it
+            Cache.getBlobCache(channel, waitFor(function(err, blob) {
+                if (err) { return; }
+                waitFor.abort();
+                cb(null, blob.length);
+            }));
+
+        }).nThen(function (waitFor) {
+            // If it's not in the cache or it's not a blob, try to get the value from the server
+            postMessage("GET_FILE_SIZE", {channel:channel}, waitFor(function (obj) {
+                if (obj && obj.error) {
+                    // If disconnected, try to get the value from the channel cache (next nThen)
+                    error = obj.error;
+                    return;
+                }
+                waitFor.abort();
+                cb(undefined, obj.size);
+            }));
+        }).nThen(function () {
+            Cache.getChannelCache(channel, function(err, data) {
+                if (err) { return void cb(error); }
+                var size = data && Array.isArray(data.c) && data.c.join('').length;
+                cb(null, size || 0);
+            });
         });
     };
 
@@ -404,11 +492,37 @@ define([
         });
     };
 
-    common.isNewChannel = function (href, password, cb) {
-        postMessage('IS_NEW_CHANNEL', {href: href, password: password}, function (obj) {
-            if (obj.error) { return void cb(obj.error); }
-            if (!obj) { return void cb('INVALID_RESPONSE'); }
-            cb(undefined, obj.isNew);
+    // This function is used when we want to open a pad. We first need
+    // to check if it exists. With the cached drive, we need to wait for
+    // the network to be available before we can continue.
+    common.isNewChannel = function (href, password, _cb) {
+        var cb = Util.once(Util.mkAsync(_cb));
+        var channel = Hash.hrefToHexChannelId(href, password);
+        var error;
+        Nthen(function (waitFor) {
+            Cache.getChannelCache(channel, waitFor(function(err, data) {
+                if (err || !data) { return; }
+                waitFor.abort();
+                cb(undefined, false);
+            }));
+        }).nThen(function () {
+            // If it's not in the cache try to get the value from the server
+            var isNew = function () {
+                error = undefined;
+                postMessage('IS_NEW_CHANNEL', {channel: channel}, function (obj) {
+                    if (obj && obj.error) { error = obj.error; }
+                    if (!obj) { error = "INVALID_RESPONSE"; }
+
+                    if (error === "ANON_RPC_NOT_READY") {
+                        // Try again in 1s
+                        return void setTimeout(isNew, 100);
+                    } else if (error) {
+                        return void cb(error);
+                    }
+                    cb(undefined, obj.isNew);
+                }, {timeout: -1});
+            };
+            isNew();
         });
     };
 
@@ -629,6 +743,10 @@ define([
                     optsPut.password = password;
                 }));
             }
+            common.getAccessKeys(waitFor(function (keys) {
+                optsGet.accessKeys = keys;
+                optsPut.accessKeys = keys;
+            }));
         }).nThen(function () {
             Crypt.get(parsed.hash, function (err, val) {
                 if (err) {
@@ -637,6 +755,7 @@ define([
                 if (!val) {
                     return void cb('ENOENT');
                 }
+                if (data.oo) { return void cb(val); } // OnlyOffice template: are handled in inner
                 try {
                     // Try to fix the title before importing the template
                     var parsed = JSON.parse(val);
@@ -650,7 +769,7 @@ define([
         });
     };
 
-    common.useFile = function (Crypt, cb, optsPut) {
+    common.useFile = function (Crypt, cb, optsPut, onProgress) {
         var fileHost = Config.fileHost || window.location.origin;
         var data = common.fromFileData;
         var parsed = Hash.parsePadUrl(data.href);
@@ -666,19 +785,28 @@ define([
                     password: data.password,
                     initialState: parsed.type === 'poll' ? '{}' : undefined
                 };
-                Crypt.get(parsed.hash, _waitFor(function (err, _val) {
-                    if (err) {
-                        _waitFor.abort();
-                        return void cb(err);
-                    }
-                    try {
-                        val = JSON.parse(_val);
-                        fixPadMetadata(val, true);
-                    } catch (e) {
-                        _waitFor.abort();
-                        return void cb(e.message);
-                    }
-                }), optsGet);
+                var next = _waitFor();
+                Nthen(function (waitFor) {
+                    // Authenticate in case the pad os restricted
+                    common.getAccessKeys(waitFor(function (keys) {
+                        optsGet.accessKeys = keys;
+                    }));
+                }).nThen(function () {
+                    Crypt.get(parsed.hash, function (err, _val) {
+                        if (err) {
+                            _waitFor.abort();
+                            return void cb(err);
+                        }
+                        try {
+                            val = JSON.parse(_val);
+                            fixPadMetadata(val, true);
+                            next();
+                        } catch (e) {
+                            _waitFor.abort();
+                            return void cb(e.message);
+                        }
+                    }, optsGet);
+                });
                 return;
             }
 
@@ -698,7 +826,9 @@ define([
                         return void cb(err);
                     }
                     u8 = _u8;
-                }));
+                }), function (progress) {
+                    onProgress(progress * 50);
+                }, Cache);
             }).nThen(function (waitFor) {
                 require(["/file/file-crypto.js"], waitFor(function (FileCrypto) {
                     FileCrypto.decrypt(u8, key, waitFor(function (err, _res) {
@@ -707,7 +837,9 @@ define([
                             return void cb(err);
                         }
                         res = _res;
-                    }));
+                    }), function (progress) {
+                        onProgress(50 + progress * 50);
+                    });
                 }));
             }).nThen(function (waitFor) {
                 var ext = Util.parseFilename(data.title).ext;
@@ -741,9 +873,6 @@ define([
         }).nThen(function () {
             Crypt.put(parsed2.hash, JSON.stringify(val), function () {
                 cb();
-                Crypt.get(parsed2.hash, function (err, val) {
-                    console.warn(val);
-                });
             }, optsPut);
         });
 
@@ -849,11 +978,30 @@ define([
     // Get data about a given channel: use with hidden hashes
     common.getPadDataFromChannel = function (obj, cb) {
         if (!obj || !obj.channel) { return void cb('EINVAL'); }
+        // Note: no timeout for this command, we may only have loaded the cached drive
+        // and need to wait for the fully synced drive
         postMessage("GET_PAD_DATA_FROM_CHANNEL", obj, function (data) {
             cb(void 0, data);
-        });
+        }, {timeout: -1});
     };
 
+    common.disableCache = function (disabled, cb) {
+        postMessage("CACHE_DISABLE", disabled, cb);
+    };
+    window.addEventListener('storage', function (e) {
+        if (e.key !== 'CRYPTPAD_STORE|disableCache') { return; }
+        var n = e.newValue;
+        if (n) {
+            Cache.disable();
+            common.disableCache(true, function () {});
+        } else {
+            Cache.enable();
+            common.disableCache(false, function () {});
+        }
+    });
+    if (localStorage['CRYPTPAD_STORE|disableCache']) {
+        Cache.disable();
+    }
 
     // Admin
     common.adminRpc = function (data, cb) {
@@ -934,6 +1082,8 @@ define([
     pad.onJoinEvent = Util.mkEvent();
     pad.onLeaveEvent = Util.mkEvent();
     pad.onDisconnectEvent = Util.mkEvent();
+    pad.onCacheEvent = Util.mkEvent();
+    pad.onCacheReadyEvent = Util.mkEvent();
     pad.onConnectEvent = Util.mkEvent();
     pad.onErrorEvent = Util.mkEvent();
     pad.onMetadataEvent = Util.mkEvent();
@@ -944,6 +1094,10 @@ define([
     };
     pad.giveAccess = function (data, cb) {
         postMessage("GIVE_PAD_ACCESS", data, cb);
+    };
+
+    common.onCorruptedCache = function (channel) {
+        postMessage("CORRUPTED_CACHE", channel);
     };
 
     common.setPadMetadata = function (data, cb) {
@@ -1006,7 +1160,7 @@ define([
             oldSecret = Hash.getSecrets(parsed.type, parsed.hash, optsGet.password);
             oldChannel = oldSecret.channel;
             common.getPadMetadata({channel: oldChannel}, waitFor(function (metadata) {
-                oldMetadata = metadata;
+                oldMetadata = metadata || {};
             }));
             common.getMetadata(waitFor(function (err, data) {
                 if (err) {
@@ -1059,6 +1213,11 @@ define([
                 optsPut.metadata.expire = (expire - (+new Date())) / 1000; // Lifetime in seconds
             }
         }).nThen(function (waitFor) {
+            common.getAccessKeys(waitFor(function (keys) {
+                optsGet.accessKeys = keys;
+                optsPut.accessKeys = keys;
+             }));
+        }).nThen(function (waitFor) {
             Crypt.get(parsed.hash, waitFor(function (err, val) {
                 if (err) {
                     waitFor.abort();
@@ -1074,6 +1233,8 @@ define([
                 }
             }), optsGet);
         }).nThen(function (waitFor) {
+            optsPut.metadata.restricted = oldMetadata.restricted;
+            optsPut.metadata.allowed = oldMetadata.allowed;
             Crypt.put(newHash, cryptgetVal, waitFor(function (err) {
                 if (err) {
                     waitFor.abort();
@@ -1309,11 +1470,17 @@ define([
                 validateKey: newSecret.keys.validateKey
             },
         };
+        var optsGet = {};
 
         Nthen(function (waitFor) {
             common.getPadAttribute('', waitFor(function (err, _data) {
                 padData = _data;
+                optsGet.password = padData.password;
             }), href);
+            common.getAccessKeys(waitFor(function (keys) {
+                optsGet.accessKeys = keys;
+                optsPut.accessKeys = keys;
+            }));
         }).nThen(function (waitFor) {
             oldSecret = Hash.getSecrets(parsed.type, parsed.hash, padData.password);
 
@@ -1392,9 +1559,7 @@ define([
                     waitFor.abort();
                     return void cb({ error: 'CANT_PARSE' });
                 }
-            }), {
-                password: padData.password
-            });
+            }), optsGet);
         }).nThen(function (waitFor) {
             // Re-encrypt rtchannel
             oldRtChannel = Util.find(cryptgetVal, ['content', 'channel']);
@@ -1808,11 +1973,70 @@ define([
 
     var requestLogin = function () {
         // log out so that you don't go into an endless loop...
-        LocalStore.logout();
+        LocalStore.logout(function () {
+            // redirect them to log in, and come back when they're done.
+            var href = Hash.hashToHref('', 'login');
+            var url = Hash.getNewPadURL(href, { href: currentPad.href });
+            window.location.href = url;
+        });
+    };
 
-        // redirect them to log in, and come back when they're done.
-        sessionStorage.redirectTo = currentPad.href;
-        window.location.href = '/login/';
+
+    var provideFeedback = function () {
+        if (typeof(window.Proxy) === 'undefined') {
+            Feedback.send("NO_PROXIES");
+        }
+
+        if (!common.isWebRTCSupported()) {
+            Feedback.send("NO_WEBRTC");
+        }
+
+        var shimPattern = /CRYPTPAD_SHIM/;
+        if (shimPattern.test(Array.isArray.toString())) {
+            Feedback.send("NO_ISARRAY");
+        }
+
+        if (shimPattern.test(Array.prototype.fill.toString())) {
+            Feedback.send("NO_ARRAYFILL");
+        }
+
+        if (typeof(Symbol) === 'undefined') {
+            Feedback.send('NO_SYMBOL');
+        }
+
+        if (typeof(SharedWorker) === "undefined") {
+            Feedback.send('NO_SHAREDWORKER');
+        } else {
+            Feedback.send('SHAREDWORKER');
+        }
+        if (typeof(Worker) === "undefined") {
+            Feedback.send('NO_WEBWORKER');
+        }
+        if (!('serviceWorker' in navigator)) {
+            Feedback.send('NO_SERVICEWORKER');
+        }
+        if (!common.hasCSSVariables()) {
+            Feedback.send('NO_CSS_VARIABLES');
+        }
+
+        Feedback.reportScreenDimensions();
+        Feedback.reportLanguage();
+    };
+    var initFeedback = function (feedback) {
+        // Initialize feedback
+        Feedback.init(feedback);
+        provideFeedback();
+    };
+    var onStoreReady = function (data) {
+        if (common.userHash) {
+            var localToken = tryParsing(localStorage.getItem(Constants.tokenKey));
+            if (localToken === null) {
+                // if that number hasn't been set to localStorage, do so.
+                localStorage.setItem(Constants.tokenKey, data[Constants.tokenKey]);
+            }
+        }
+
+        initFeedback(data.feedback);
     };
 
     common.startAccountDeletion = function (data, cb) {
@@ -1861,6 +2085,8 @@ define([
             var localToken = tryParsing(localStorage.getItem(Constants.tokenKey));
             if (localToken !== data.token) { requestLogin(); }
         },
+        // Store
+        STORE_READY: onStoreReady,
         // Network
         NETWORK_DISCONNECT: common.onNetworkDisconnect.fire,
         NETWORK_RECONNECT: function (data) {
@@ -1887,6 +2113,8 @@ define([
         PAD_JOIN: common.padRpc.onJoinEvent.fire,
         PAD_LEAVE: common.padRpc.onLeaveEvent.fire,
         PAD_DISCONNECT: common.padRpc.onDisconnectEvent.fire,
+        PAD_CACHE: common.padRpc.onCacheEvent.fire,
+        PAD_CACHE_READY: common.padRpc.onCacheReadyEvent.fire,
         PAD_CONNECT: common.padRpc.onConnectEvent.fire,
         PAD_ERROR: common.padRpc.onErrorEvent.fire,
         PAD_METADATA: common.padRpc.onMetadataEvent.fire,
@@ -1940,53 +2168,33 @@ define([
             return void setTimeout(function () { f(void 0, env); });
         }
 
-        var provideFeedback = function () {
-            if (typeof(window.Proxy) === 'undefined') {
-                Feedback.send("NO_PROXIES");
-            }
-
-            if (!common.isWebRTCSupported()) {
-                Feedback.send("NO_WEBRTC");
-            }
-
-            var shimPattern = /CRYPTPAD_SHIM/;
-            if (shimPattern.test(Array.isArray.toString())) {
-                Feedback.send("NO_ISARRAY");
-            }
-
-            if (shimPattern.test(Array.prototype.fill.toString())) {
-                Feedback.send("NO_ARRAYFILL");
-            }
-
-            if (typeof(Symbol) === 'undefined') {
-                Feedback.send('NO_SYMBOL');
-            }
-
-            if (typeof(SharedWorker) === "undefined") {
-                Feedback.send('NO_SHAREDWORKER');
-            } else {
-                Feedback.send('SHAREDWORKER');
-            }
-            if (typeof(Worker) === "undefined") {
-                Feedback.send('NO_WEBWORKER');
-            }
-            if (!('serviceWorker' in navigator)) {
-                Feedback.send('NO_SERVICEWORKER');
-            }
-            if (!common.hasCSSVariables()) {
-                Feedback.send('NO_CSS_VARIABLES');
-            }
-
-            Feedback.reportScreenDimensions();
-            Feedback.reportLanguage();
-        };
-        var initFeedback = function (feedback) {
-            // Initialize feedback
-            Feedback.init(feedback);
-            provideFeedback();
-        };
-
         var userHash;
+
+        (function iOSFirefoxFix () {
+/*
+    For some bizarre reason Firefox on iOS throws an error during the
+    loading process unless we call this function. Drawing these elements
+    to the DOM presumably causes the JS engine to wait just a little bit longer
+    until some APIs we need are ready. This occurs despite all this code being
+    run after the usual dom-ready events. This fix was discovered while trying
+    to log the error messages to the DOM because it's extremely difficult
+    to debug Firefox iOS in the usual ways. In summary, computers are terrible.
+*/
+             try {
+                var style = document.createElement('style');
+                    style.type = 'text/css';
+                    style.appendChild(document.createTextNode('#cp-logger { display: none; }'));
+                document.head.appendChild(style);
+
+                var logger = document.createElement('div');
+                    logger.setAttribute('id', 'cp-logger');
+                document.body.appendChild(logger);
+
+                var pre = document.createElement('pre');
+                    pre.innerText = 'x';
+                logger.appendChild(pre);
+            } catch (err) { console.error(err); }
+        }());
 
         Nthen(function (waitFor) {
             if (AppConfig.beforeLogin) {
@@ -2034,28 +2242,33 @@ define([
                 anonHash: LocalStore.getFSHash(),
                 localToken: tryParsing(localStorage.getItem(Constants.tokenKey)), // TODO move this to LocalStore ?
                 language: common.getLanguage(),
+                cache: rdyCfg.cache,
+                disableCache: localStorage['CRYPTPAD_STORE|disableCache'],
                 driveEvents: true //rdyCfg.driveEvents // Boolean
             };
-            // if a pad is created from a file
-            if (sessionStorage[Constants.newPadFileData]) {
-                common.fromFileData = JSON.parse(sessionStorage[Constants.newPadFileData]);
+            common.userHash = userHash;
+
+            // FIXME Backward compatibility
+            if (sessionStorage.newPadFileData) {
+                common.fromFileData = JSON.parse(sessionStorage.newPadFileData);
                 var _parsed1 = Hash.parsePadUrl(common.fromFileData.href);
                 var _parsed2 = Hash.parsePadUrl(window.location.href);
                 if (_parsed1.hashData.type === 'pad') {
                     if (_parsed1.type !== _parsed2.type) { delete common.fromFileData; }
                 }
-                delete sessionStorage[Constants.newPadFileData];
+                delete sessionStorage.newPadFileData;
             }
 
-            if (sessionStorage[Constants.newPadPathKey]) {
-                common.initialPath = sessionStorage[Constants.newPadPathKey];
-                delete sessionStorage[Constants.newPadPathKey];
+            if (sessionStorage.newPadPath) {
+                common.initialPath = sessionStorage.newPadPath;
+                delete sessionStorage.newPadPath;
             }
 
-            if (sessionStorage[Constants.newPadTeamKey]) {
-                common.initialTeam = sessionStorage[Constants.newPadTeamKey];
-                delete sessionStorage[Constants.newPadTeamKey];
+            if (sessionStorage.newPadTeam) {
+                common.initialTeam = sessionStorage.newPadTeam;
+                delete sessionStorage.newPadTeam;
             }
+
 
             var channelIsReady = waitFor();
 
@@ -2228,21 +2441,6 @@ define([
 
                         if (data.anonHash && !cfg.userHash) { LocalStore.setFSHash(data.anonHash); }
 
-                        /*if (cfg.userHash && sessionStorage) {
-                            // copy User_hash into sessionStorage because cross-domain iframes
-                            // on safari replaces localStorage with sessionStorage or something
-                            sessionStorage.setItem(Constants.userHashKey, cfg.userHash);
-                        }*/
-
-                        if (cfg.userHash) {
-                            var localToken = tryParsing(localStorage.getItem(Constants.tokenKey));
-                            if (localToken === null) {
-                                // if that number hasn't been set to localStorage, do so.
-                                localStorage.setItem(Constants.tokenKey, data[Constants.tokenKey]);
-                            }
-                        }
-
-                        initFeedback(data.feedback);
                         initialized = true;
                         channelIsReady();
                     });
@@ -2288,21 +2486,18 @@ define([
                 postMessage("DISCONNECT");
             });
         }).nThen(function (waitFor) {
-            if (sessionStorage.createReadme) {
+            if (common.createReadme || sessionStorage.createReadme) {
                 var data = {
                     driveReadme: Messages.driveReadme,
                     driveReadmeTitle: Messages.driveReadmeTitle,
                 };
                 postMessage("CREATE_README", data, waitFor(function (e) {
                     if (e && e.error) { return void console.error(e.error); }
-                    delete sessionStorage.createReadme;
                 }));
             }
         }).nThen(function (waitFor) {
-            if (sessionStorage.migrateAnonDrive) {
-                common.mergeAnonDrive(waitFor(function() {
-                    delete sessionStorage.migrateAnonDrive;
-                }));
+            if (common.migrateAnonDrive || sessionStorage.migrateAnonDrive) {
+                common.mergeAnonDrive(waitFor());
             }
         }).nThen(function (waitFor) {
             if (AppConfig.afterLogin) {

@@ -3,52 +3,25 @@ define([
     '/bower_components/nthen/index.js',
     '/api/config',
     '/common/dom-ready.js',
-    '/common/requireconfig.js',
     '/common/sframe-common-outer.js',
-], function (nThen, ApiConfig, DomReady, RequireConfig, SFCommonO) {
-    var requireConfig = RequireConfig();
+], function (nThen, ApiConfig, DomReady, SFCommonO) {
 
     // Loaded in load #2
     var hash, href;
     nThen(function (waitFor) {
         DomReady.onReady(waitFor());
     }).nThen(function (waitFor) {
-        var req = {
-            cfg: requireConfig,
-            req: [ '/common/loading.js' ],
-            pfx: window.location.origin
-        };
-        window.rc = requireConfig;
-        window.apiconf = ApiConfig;
-
-        // Hidden hash
-        hash = window.location.hash;
-        href = window.location.href;
-        if (window.history && window.history.replaceState && hash) {
-            window.history.replaceState({}, window.document.title, '#');
-        }
-
-        document.getElementById('sbox-iframe').setAttribute('src',
-            ApiConfig.httpSafeOrigin + '/drive/inner.html?' + requireConfig.urlArgs +
-                '#' + encodeURIComponent(JSON.stringify(req)));
-
-        // This is a cheap trick to avoid loading sframe-channel in parallel with the
-        // loading screen setup.
-        var done = waitFor();
-        var onMsg = function (msg) {
-            var data = JSON.parse(msg.data);
-            if (data.q !== 'READY') { return; }
-            window.removeEventListener('message', onMsg);
-            var _done = done;
-            done = function () { };
-            _done();
-        };
-        window.addEventListener('message', onMsg);
+        var obj = SFCommonO.initIframe(waitFor, true);
+        href = obj.href;
+        hash = obj.hash;
     }).nThen(function (/*waitFor*/) {
         var afterSecrets = function (Cryptpad, Utils, secret, cb, sframeChan) {
-            var _hash = hash.slice(1);
-            if (_hash && Utils.LocalStore.isLoggedIn()) {
-                // Add a shared folder!
+            var parsed = Utils.Hash.parsePadUrl(href);
+            var isSf = parsed.hashData && parsed.hashData.type === 'pad';
+            if (!isSf) { return void cb(); }
+
+            // SF and logged in: add shared folder
+            if (Utils.LocalStore.isLoggedIn()) {
                 Cryptpad.addSharedFolder(null, secret, function (id) {
                     if (id && typeof(id) === "object" && id.error) {
                         sframeChan.event("EV_RESTRICTED_ERROR");
@@ -65,23 +38,29 @@ define([
                     cb();
                 });
                 return;
-            } else if (_hash) {
-                var id = Utils.Util.createRandomInteger();
-                window.CryptPad_newSharedFolder = id;
-                var data = {
-                    href: Utils.Hash.getRelativeHref(Cryptpad.currentPad.href),
-                    password: secret.password
-                };
-                return void Cryptpad.loadSharedFolder(id, data, cb);
             }
-            cb();
+
+            // Anon shared folder
+            var id = Utils.Util.createRandomInteger();
+            window.CryptPad_newSharedFolder = id;
+            var data = {
+                href: Utils.Hash.getRelativeHref(Cryptpad.currentPad.href),
+                password: secret.password
+            };
+            Cryptpad.loadSharedFolder(id, data, cb);
         };
         var addRpc = function (sframeChan, Cryptpad, Utils) {
             sframeChan.on('EV_BURN_ANON_DRIVE', function () {
                 if (Utils.LocalStore.isLoggedIn()) { return; }
                 Utils.LocalStore.setFSHash('');
                 Utils.LocalStore.clearThumbnail();
-                window.location.reload();
+                try {
+                    Utils.Cache.clear(function () {
+                        window.location.reload();
+                    });
+                } catch (e) {
+                    window.location.reload();
+                }
             });
             sframeChan.on('Q_DRIVE_USEROBJECT', function (data, cb) {
                 Cryptpad.userObjectCommand(data, cb);
@@ -126,6 +105,7 @@ define([
             hash: hash,
             href: href,
             afterSecrets: afterSecrets,
+            cache: true,
             noHash: true,
             noRealtime: true,
             driveEvents: true,

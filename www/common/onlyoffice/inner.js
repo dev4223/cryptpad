@@ -61,6 +61,7 @@ define([
     var DISPLAY_RESTORE_BUTTON = false;
     var NEW_VERSION = 3;
     var PENDING_TIMEOUT = 30000;
+    var CURRENT_VERSION = 'v2b';
     //var READONLY_REFRESH_TO = 15000;
 
     var debug = function (x) {
@@ -99,6 +100,9 @@ define([
         var sessionId = Hash.createChannelId();
         var cpNfInner;
 
+        var evOnPatch = Util.mkEvent();
+        var evOnSync = Util.mkEvent();
+
         // This structure is used for caching media data and blob urls for each media cryptpad url
         var mediasData = {};
 
@@ -114,6 +118,7 @@ define([
         };
 
         var getEditor = function () {
+            if (!window.frames || !window.frames[0]) { return; }
             return window.frames[0].editor || window.frames[0].editorCell;
         };
 
@@ -260,13 +265,17 @@ define([
                 });
             },
             sendMsg: function (msg, cp, cb) {
+                evOnPatch.fire();
                 rtChannel.sendCmd({
                     cmd: 'SEND_MESSAGE',
                     data: {
                         msg: msg,
                         isCp: cp
                     }
-                }, cb);
+                }, function (err, h) {
+                    if (!err) { evOnSync.fire(); }
+                    cb(err, h);
+                });
             },
         };
 
@@ -416,7 +425,7 @@ define([
                 clearTimeout(pendingChanges[key]);
                 delete pendingChanges[key];
             });
-            if (APP.stopHistory) { APP.history = false; }
+            if (APP.stopHistory || APP.template) { APP.history = false; }
             startOO(blob, type, true);
         };
 
@@ -426,14 +435,15 @@ define([
             var file = getFileType();
             blob.name = (metadataMgr.getMetadataLazy().title || file.doc) + '.' + file.type;
             var data = {
-                hash: APP.history ? ooChannel.historyLastHash : ooChannel.lastHash,
-                index: APP.history ? ooChannel.currentIndex : ooChannel.cpIndex
+                hash: (APP.history || APP.template) ? ooChannel.historyLastHash : ooChannel.lastHash,
+                index: (APP.history || APP.template) ? ooChannel.currentIndex : ooChannel.cpIndex
             };
             fixSheets();
 
             ooChannel.ready = false;
             ooChannel.queue = [];
             data.callback = function () {
+                if (APP.template) { APP.template = false; }
                 resetData(blob, file);
             };
 
@@ -458,15 +468,11 @@ define([
                     var actions = h('div', [cancel, register, login]);
                     var modal = UI.cornerPopup(Messages.oo_login, actions, '', {alt: true});
                     $(register).click(function () {
-                        common.setLoginRedirect(function () {
-                            common.gotoURL('/register/');
-                        });
+                        common.setLoginRedirect('register');
                         modal.delete();
                     });
                     $(login).click(function () {
-                        common.setLoginRedirect(function () {
-                            common.gotoURL('/login/');
-                        });
+                        common.setLoginRedirect('login');
                         modal.delete();
                     });
                     $(cancel).click(function () {
@@ -777,6 +783,18 @@ define([
                     view: false
                 };
             });
+            // Add an history keeper user to show that we're never alone
+            var hkId = Util.createRandomInteger();
+            p.push({
+                id: hkId,
+                idOriginal: String(hkId),
+                username: "History",
+                indexUser: i,
+                connectionId: Hash.createChannelId(),
+                isCloseCoAuthoring:false,
+                view: false
+            });
+            i++;
             if (!myUniqueOOId) { myUniqueOOId = String(myOOId) + i; }
             p.push({
                 id: myUniqueOOId,
@@ -1166,7 +1184,7 @@ define([
                     "url": url,
                     "permissions": {
                         "download": false,
-                        "print": false,
+                        "print": true,
                     }
                 },
                 "documentType": file.doc,
@@ -1223,6 +1241,7 @@ define([
                         }
                     },
                     "onDocumentReady": function () {
+                        evOnSync.fire();
                         var onMigrateRdy = Util.mkEvent();
                         onMigrateRdy.reg(function () {
                             var div = h('div.cp-oo-x2tXls', [
@@ -1296,6 +1315,15 @@ define([
                             }
                         }
 
+                        if (APP.template) {
+                            getEditor().setViewModeDisconnect();
+                            UI.removeLoadingScreen();
+                            makeCheckpoint(true);
+                            return;
+                        }
+
+                        APP.onLocal(); // Add our data to the userlist
+
                         if (APP.history) {
                             try {
                                 getEditor().asc_setRestriction(true);
@@ -1304,6 +1332,16 @@ define([
 
                         if (APP.migrate && !readOnly) {
                             onMigrateRdy.fire();
+                        }
+
+                        // Check if history can/should be trimmed
+                        var cp = getLastCp();
+                        if (cp && cp.file && cp.hash) {
+                            var channels = [{
+                                channel: content.channel,
+                                lastKnownHash: cp.hash
+                            }];
+                            common.checkTrimHistory(channels);
                         }
                     }
                 }
@@ -1348,6 +1386,10 @@ define([
                         });
                     });
                 });
+            };
+
+            APP.openURL = function (url) {
+                common.openUnsafeURL(url);
             };
 
             APP.loadingImage = 0;
@@ -1404,12 +1446,46 @@ define([
                         console.error(e);
                         callback("");
                     }
-                });
+                }, void 0, common.getCache());
             };
 
             APP.docEditor = new window.DocsAPI.DocEditor("cp-app-oo-placeholder-a", APP.ooconfig);
             ooLoaded = true;
             makeChannel();
+        };
+
+        var x2tReady = Util.mkEvent(true);
+        var fetchFonts = function (x2t) {
+            var path = '/common/onlyoffice/'+CURRENT_VERSION+'/fonts/';
+            var e = getEditor();
+            var fonts = e.FontLoader.fontInfos;
+            var files = e.FontLoader.fontFiles;
+            var suffixes = {
+                indexR: '',
+                indexB: '_Bold',
+                indexBI: '_Bold_Italic',
+                indexI: '_Italic',
+            };
+            nThen(function (waitFor) {
+                fonts.forEach(function (font) {
+                    // Check if the font is already loaded
+                    if (!font.NeedStyles) { return; }
+                    // Pick the variants we need (regular, bold, italic)
+                    ['indexR', 'indexB', 'indexI', 'indexBI'].forEach(function (k) {
+                        if (typeof(font[k]) !== "number" || font[k] === -1) { return; } // No matching file
+                        var file = files[font[k]];
+
+                        var name = font.Name + suffixes[k] + '.ttf';
+                        Util.fetch(path + file.Id, waitFor(function (err, buffer) {
+                            if (buffer) {
+                                x2t.FS.writeFile('/working/fonts/' + name, buffer);
+                            }
+                        }));
+                    });
+                });
+            }).nThen(function () {
+                x2tReady.fire();
+            });
         };
 
         var x2tInitialized = false;
@@ -1418,9 +1494,34 @@ define([
             // x2t.FS.mount(x2t.MEMFS, {} , '/');
             x2t.FS.mkdir('/working');
             x2t.FS.mkdir('/working/media');
+            x2t.FS.mkdir('/working/fonts');
             x2tInitialized = true;
+            fetchFonts(x2t);
             debug("x2t mount done");
         };
+        var getX2T = function (cb) {
+            // Perform the x2t conversion
+            require(['/common/onlyoffice/x2t/x2t.js'], function() { // FIXME why does this fail without an access-control-allow-origin header?
+                var x2t = window.Module;
+                x2t.run();
+                if (x2tInitialized) {
+                    debug("x2t runtime already initialized");
+                    return void x2tReady.reg(function () {
+                        cb(x2t);
+                    });
+                }
+
+                x2t.onRuntimeInitialized = function() {
+                    debug("x2t in runtime initialized");
+                    // Init x2t js module
+                    x2tInit(x2t);
+                    x2tReady.reg(function () {
+                        cb(x2t);
+                    });
+                };
+            });
+        };
+
 
         /*
             Converting Data
@@ -1429,10 +1530,41 @@ define([
             The filename extension needs to represent the input format
             Example: fileName=cryptpad.bin outputFormat=xlsx
         */
+        var getFormatId = function (ext) {
+            // Sheets
+            if (ext === 'xlsx') { return 257; }
+            if (ext === 'xls') { return 258; }
+            if (ext === 'ods') { return 259; }
+            if (ext === 'csv') { return 260; }
+            if (ext === 'pdf') { return 513; }
+            return;
+        };
+        var getFromId = function (ext) {
+            var id = getFormatId(ext);
+            if (!id) { return ''; }
+            return '<m_nFormatFrom>'+id+'</m_nFormatFrom>';
+        };
+        var getToId = function (ext) {
+            var id = getFormatId(ext);
+            if (!id) { return ''; }
+            return '<m_nFormatTo>'+id+'</m_nFormatTo>';
+        };
         var x2tConvertDataInternal = function(x2t, data, fileName, outputFormat) {
             debug("Converting Data for " + fileName + " to " + outputFormat);
-            // writing file to mounted working disk (in memory)
-            x2t.FS.writeFile('/working/' + fileName, data);
+
+            // PDF
+            var pdfData = '';
+            if (outputFormat === "pdf" && typeof(data) === "object" && data.bin && data.buffer) {
+                // Add conversion rules
+                pdfData = "<m_bIsNoBase64>false</m_bIsNoBase64>" +
+                          "<m_sFontDir>/working/fonts/</m_sFontDir>";
+                // writing file to mounted working disk (in memory)
+                x2t.FS.writeFile('/working/' + fileName, data.bin);
+                x2t.FS.writeFile('/working/pdf.bin', data.buffer);
+            } else {
+                // writing file to mounted working disk (in memory)
+                x2t.FS.writeFile('/working/' + fileName, data);
+            }
 
             // Adding images
             Object.keys(window.frames[0].AscCommon.g_oDocumentUrls.urls || {}).forEach(function (_mediaFileName) {
@@ -1450,10 +1582,16 @@ define([
                 }
             });
 
+
+            var inputFormat = fileName.split('.').pop();
+
             var params =  "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
                         + "<TaskQueueDataConvert xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">"
                         + "<m_sFileFrom>/working/" + fileName + "</m_sFileFrom>"
                         + "<m_sFileTo>/working/" + fileName + "." + outputFormat + "</m_sFileTo>"
+                        + pdfData
+                        + getFromId(inputFormat)
+                        + getToId(outputFormat)
                         + "<m_bIsNoBase64>false</m_bIsNoBase64>"
                         + "</TaskQueueDataConvert>";
             // writing params file to mounted working disk (in memory)
@@ -1473,9 +1611,61 @@ define([
             return result;
         };
 
+        APP.printPdf = function (obj, cb) {
+            getX2T(function (x2t) {
+                //var e = getEditor();
+                //var d = e.asc_nativePrint(undefined, undefined, 0x100 + opts.printType).ImData;
+                var bin = getContent();
+                var xlsData = x2tConvertDataInternal(x2t, {
+                    buffer: obj.data,
+                    bin: bin
+                }, 'output.bin', 'pdf');
+                if (xlsData) {
+                    var md = common.getMetadataMgr().getMetadataLazy();
+                    var type = common.getMetadataMgr().getPrivateData().ooType;
+                    var title = md.title || md.defaultTitle || type;
+                    var blob = new Blob([xlsData], {type: "application/pdf"});
+                    //var url = URL.createObjectURL(blob, { type: "application/pdf" });
+                    saveAs(blob, title+'.pdf');
+                    //window.open(url);
+                    cb({
+                        "type":"save",
+                        "status":"ok",
+                        //"data":url + "?disposition=inline&ooname=output.pdf"
+                    });
+                    /*
+                    ooChannel.send({
+                        "type":"documentOpen",
+                        "data": {
+                            "type":"save",
+                            "status":"ok",
+                            "data":url + "?disposition=inline&ooname=output.pdf"
+                        }
+                    });
+                    */
+                }
+            });
+        };
+
         var x2tSaveAndConvertDataInternal = function(x2t, data, filename, extension, finalFilename) {
             var type = common.getMetadataMgr().getPrivateData().ooType;
             var xlsData;
+
+            // PDF
+            if (type === "sheet" && extension === "pdf") {
+                var e = getEditor();
+                var d = e.asc_nativePrint(undefined, undefined, 0x101).ImData;
+                xlsData = x2tConvertDataInternal(x2t, {
+                    buffer: d.data,
+                    bin: data
+                }, filename, extension);
+                if (xlsData) {
+                    var _blob = new Blob([xlsData], {type: "application/bin;charset=utf-8"});
+                    UI.removeModals();
+                    saveAs(_blob, finalFilename);
+                }
+                return;
+            }
             if (type === "sheet" && extension !== 'xlsx') {
                 xlsData = x2tConvertDataInternal(x2t, data, filename, 'xlsx');
                 filename += '.xlsx';
@@ -1494,22 +1684,9 @@ define([
             }
         };
 
-        var x2tSaveAndConvertData = function(data, filename, extension, finalFilename) {
-            // Perform the x2t conversion
-            require(['/common/onlyoffice/x2t/x2t.js'], function() { // FIXME why does this fail without an access-control-allow-origin header?
-                var x2t = window.Module;
-                x2t.run();
-                if (x2tInitialized) {
-                    debug("x2t runtime already initialized");
-                    return void x2tSaveAndConvertDataInternal(x2t, data, filename, extension, finalFilename);
-                }
-
-                x2t.onRuntimeInitialized = function() {
-                    debug("x2t in runtime initialized");
-                    // Init x2t js module
-                    x2tInit(x2t);
-                    x2tSaveAndConvertDataInternal(x2t, data, filename, extension, finalFilename);
-                };
+        var x2tSaveAndConvertData = function(data, filename, extension, finalName) {
+            getX2T(function (x2t) {
+                x2tSaveAndConvertDataInternal(x2t, data, filename, extension, finalName);
             });
         };
 
@@ -1520,7 +1697,7 @@ define([
         var exportXLSXFile = function() {
             var text = getContent();
             var suggestion = Title.suggestTitle(Title.defaultTitle);
-            var ext = ['.xlsx', /*'.ods',*/ '.bin'];
+            var ext = ['.xlsx', '.ods', '.bin', '.csv', '.pdf'];
             var type = common.getMetadataMgr().getPrivateData().ooType;
             var warning = '';
             if (type==="ooslide") {
@@ -1652,7 +1829,9 @@ define([
             // Convert from ODF format:
             // first convert to Office format then to the selected extension
             if (filename.endsWith(".ods")) {
+                console.log(x2t, data, filename, extension);
                 convertedContent = x2tConvertDataInternal(x2t, new Uint8Array(data), filename, "xlsx");
+                console.log(convertedContent);
                 convertedContent = x2tConvertDataInternal(x2t, convertedContent, filename + ".xlsx", extension);
             } else if (filename.endsWith(".odt")) {
                 convertedContent = x2tConvertDataInternal(x2t, new Uint8Array(data), filename, "docx");
@@ -1718,24 +1897,10 @@ define([
             ]);
             UI.openCustomModal(UI.dialog.customModal(div, {buttons: []}));
             setTimeout(function () {
-                require(['/common/onlyoffice/x2t/x2t.js'], function() {
-                    var x2t = window.Module;
-                    x2t.run();
-                    if (x2tInitialized) {
-                        debug("x2t runtime already initialized");
-                        x2tConvertData(x2t, new Uint8Array(content), filename.name, "bin", function(convertedContent) {
-                            importFile(convertedContent);
-                        });
-                    }
-
-                    x2t.onRuntimeInitialized = function() {
-                        debug("x2t in runtime initialized");
-                        // Init x2t js module
-                        x2tInit(x2t);
-                        x2tConvertData(x2t, new Uint8Array(content), filename.name, "bin", function(convertedContent) {
-                            importFile(convertedContent);
-                        });
-                    };
+                getX2T(function (x2t) {
+                    x2tConvertData(x2t, new Uint8Array(content), filename.name, "bin", function(c) {
+                        importFile(c);
+                    });
                 });
             }, 100);
         };
@@ -1829,6 +1994,108 @@ define([
             pinImages();
         };
 
+        var loadCp = function (cp, keepQueue) {
+            loadLastDocument(cp, function () {
+                var file = getFileType();
+                var type = common.getMetadataMgr().getPrivateData().ooType;
+                var blob = loadInitDocument(type, true);
+                if (!keepQueue) { ooChannel.queue = []; }
+                resetData(blob, file);
+            }, function (blob, file) {
+                if (!keepQueue) { ooChannel.queue = []; }
+                resetData(blob, file);
+            });
+        };
+
+        var loadTemplate = function (href, pw, parsed) {
+            APP.history = true;
+            APP.template = true;
+            var editor = getEditor();
+            if (editor) { editor.setViewModeDisconnect(); }
+            var content = parsed.content;
+
+            // Get checkpoint
+            var hashes = content.hashes || {};
+            var idx = sortCpIndex(hashes);
+            var lastIndex = idx[idx.length - 1];
+            var lastCp = hashes[lastIndex] || {};
+
+            // Current cp or initial hash (invalid hash ==> initial hash)
+            var toHash = lastCp.hash || 'NONE';
+            // Last hash
+            var fromHash = 'NONE';
+
+            sframeChan.query('Q_GET_HISTORY_RANGE', {
+                href: href,
+                password: pw,
+                channel: content.channel,
+                lastKnownHash: fromHash,
+                toHash: toHash,
+            }, function (err, data) {
+                if (err) { return void console.error(err); }
+                if (!Array.isArray(data.messages)) { return void console.error('Not an array!'); }
+
+                // The first "cp" in history is the empty doc. It doesn't include the first patch
+                // of the history
+                var initialCp = !lastCp.hash;
+
+                var messages = (data.messages || []).slice(initialCp ? 0 : 1);
+
+                ooChannel.queue = messages.map(function (obj) {
+                    return {
+                        hash: obj.serverHash,
+                        msg: JSON.parse(obj.msg)
+                    };
+                });
+                ooChannel.historyLastHash = ooChannel.lastHash;
+                ooChannel.currentIndex = ooChannel.cpIndex;
+                loadCp(lastCp, true);
+            });
+        };
+
+        var openTemplatePicker = function () {
+            var metadataMgr = common.getMetadataMgr();
+            var type = metadataMgr.getPrivateData().app;
+            var sframeChan = common.getSframeChannel();
+            var pickerCfgInit = {
+                types: [type],
+                where: ['template'],
+                hidden: true
+            };
+            var pickerCfg = {
+                types: [type],
+                where: ['template'],
+            };
+            var onConfirm = function () {
+                common.openFilePicker(pickerCfg, function (data) {
+                    if (data.type !== type) { return; }
+                    UI.addLoadingScreen({hideTips: true});
+                    sframeChan.query('Q_OO_TEMPLATE_USE', {
+                        href: data.href,
+                    }, function (err, val) {
+                        var parsed;
+                        try {
+                            parsed = JSON.parse(val);
+                        } catch (e) {
+                            console.error(e, val);
+                            UI.removeLoadingScreen();
+                            return void UI.warn(Messages.error);
+                        }
+                        console.error(data);
+                        loadTemplate(data.href, data.password, parsed);
+                    });
+                });
+            };
+            sframeChan.query("Q_TEMPLATE_EXIST", type, function (err, data) {
+                if (data) {
+                    common.openFilePicker(pickerCfgInit);
+                    onConfirm();
+                } else {
+                    UI.alert(Messages.template_empty);
+                }
+            });
+        };
+
         config.onInit = function (info) {
             var privateData = metadataMgr.getPrivateData();
 
@@ -1842,6 +2109,10 @@ define([
                 metadataMgr: metadataMgr,
                 readOnly: readOnly,
                 realtime: info.realtime,
+                spinner: {
+                    onPatch: evOnPatch,
+                    onSync: evOnSync
+                },
                 sfCommon: common,
                 $container: $bar,
                 $contentContainer: $('#cp-app-oo-container')
@@ -1850,6 +2121,7 @@ define([
             Title.setToolbar(toolbar);
 
             if (window.CP_DEV_MODE) {
+
                 var $save = common.createButton('save', true, {}, function () {
                     makeCheckpoint(true);
                 });
@@ -1865,18 +2137,6 @@ define([
                     // flag only when the checkpoint is ready.
                     APP.stopHistory = true;
                     makeCheckpoint(true);
-                };
-                var loadCp = function (cp, keepQueue) {
-                    loadLastDocument(cp, function () {
-                        var file = getFileType();
-                        var type = common.getMetadataMgr().getPrivateData().ooType;
-                        var blob = loadInitDocument(type, true);
-                        if (!keepQueue) { ooChannel.queue = []; }
-                        resetData(blob, file);
-                    }, function (blob, file) {
-                        if (!keepQueue) { ooChannel.queue = []; }
-                        resetData(blob, file);
-                    });
                 };
                 var onPatch = function (patch) {
                     // Patch on the current cp
@@ -1971,6 +2231,12 @@ define([
                     load: loadSnapshot
                 });
                 toolbar.$drawer.append($snapshot);
+
+                // Import template
+                var $template = common.createButton('importtemplate', true, {}, openTemplatePicker);
+                if ($template && typeof($template.appendTo) === 'function') {
+                    $template.appendTo(toolbar.$drawer);
+                }
             })();
             }
 
@@ -2064,11 +2330,17 @@ define([
                     url: newLatest.file
                 }, function () { });
                 newDoc = !content.hashes || Object.keys(content.hashes).length === 0;
+            } else if (!privateData.isNewFile) {
+                // This is an empty doc but not a new file: error
+                UI.errorLoadingScreen(Messages.unableToDisplay, false, function () {
+                    common.gotoURL('');
+                });
+                throw new Error("Empty chainpad for a non-empty doc");
             } else {
                 Title.updateTitle(Title.defaultTitle);
             }
 
-            var version = 'v2b/';
+            var version = CURRENT_VERSION + '/';
             var msg;
             // Old version detected: use the old OO and start the migration if we can
             if (privateData.ooForceVersion) {
@@ -2129,11 +2401,18 @@ define([
             openRtChannel(function () {
                 setMyId();
                 oldHashes = JSON.parse(JSON.stringify(content.hashes));
-                loadDocument(newDoc, useNewDefault);
                 initializing = false;
+                common.openPadChat(APP.onLocal);
+
+                if (APP.startWithTemplate) {
+                    var template = APP.startWithTemplate;
+                    loadTemplate(template.href, template.password, template.content);
+                    return;
+                }
+
+                loadDocument(newDoc, useNewDefault);
                 setEditable(!readOnly);
                 UI.removeLoadingScreen();
-                common.openPadChat(APP.onLocal);
             });
         };
 
@@ -2257,8 +2536,11 @@ define([
             }));
             SFCommon.create(waitFor(function (c) { APP.common = common = c; }));
         }).nThen(function (waitFor) {
+            common.getSframeChannel().on('EV_OO_TEMPLATE', function (data) {
+                APP.startWithTemplate = data;
+            });
             common.handleNewFile(waitFor, {
-                noTemplates: true
+                //noTemplates: true
             });
         }).nThen(function (/*waitFor*/) {
             andThen(common);

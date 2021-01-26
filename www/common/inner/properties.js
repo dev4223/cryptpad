@@ -19,6 +19,13 @@ define([
         var $d = $('<div>');
         if (!data) { return void cb(void 0, $d); }
 
+        if (data.channel) {
+            $('<label>', { 'for': 'cp-app-prop-id'}).text(Messages.documentID).appendTo($d);
+            $d.append(UI.dialog.selectable(data.channel, {
+                id: 'cp-app-prop-id',
+            }));
+        }
+
         if (data.href) {
             $('<label>', {'for': 'cp-app-prop-link'}).text(Messages.editShare).appendTo($d);
             $d.append(UI.dialog.selectable(data.href, {
@@ -46,6 +53,9 @@ define([
         }
 
         if (!common.isLoggedIn()) { return void cb(void 0, $d); }
+
+        var privateData = common.getMetadataMgr().getPrivateData();
+        if (privateData.offline) { return void cb(void 0, $d); }
 
         // File and history size...
         var owned = Modal.isOwned(Env, data);
@@ -81,7 +91,7 @@ define([
                         console.error(e);
                     }
                     bytes += _bytes;
-                }));
+                }), true);
             });
 
             if (!owned) { return; }

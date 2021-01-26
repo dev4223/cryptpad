@@ -4,9 +4,7 @@
 
 body.cp-app-pad {
     .framework_main(
-        @bg-color: @colortheme_pad-bg,
-        @warn-color: @colortheme_pad-warn,
-        @color: @colortheme_pad-color
+        @bg-color: @colortheme_apps[pad],
     );
 
     @bg-color: #e3e3e3;
@@ -27,6 +25,7 @@ body.cp-app-pad {
     #cp-app-pad-toc {
         @toc-level-indent: 15px;
 
+        overflow-y: auto;
         margin-top: 10px;
         margin-left: 10px;
         width: 200px;

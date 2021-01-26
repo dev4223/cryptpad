@@ -4,7 +4,8 @@ define([
     '/api/config',
     'jquery',
     '/common/requireconfig.js',
-], function (nThen, ApiConfig, $, RequireConfig) {
+    '/customize/messages.js',
+], function (nThen, ApiConfig, $, RequireConfig, Messages) {
     var requireConfig = RequireConfig();
 
     var ready = false;
@@ -15,10 +16,12 @@ define([
         nThen(function (waitFor) {
             $(waitFor());
         }).nThen(function (waitFor) {
+            var lang = Messages._languageUsed;
             var req = {
                 cfg: requireConfig,
                 req: [ '/common/loading.js' ],
-                pfx: window.location.origin
+                pfx: window.location.origin,
+                lang: lang
             };
             window.rc = requireConfig;
             window.apiconf = ApiConfig;
@@ -30,7 +33,7 @@ define([
             // loading screen setup.
             var done = waitFor();
             var onMsg = function (msg) {
-                var data = JSON.parse(msg.data);
+                var data = typeof(msg.data) === "object" ? msg.data : JSON.parse(msg.data);
                 if (data.q !== 'READY') { return; }
                 window.removeEventListener('message', onMsg);
                 var _done = done;
@@ -74,6 +77,7 @@ define([
                 };
                 window.addEventListener('message', whenReady);
             }).nThen(function () {
+                var isTemplate = config.data.isTemplate;
                 var updateMeta = function () {
                     //console.log('EV_METADATA_UPDATE');
                     var metaObj;
@@ -96,8 +100,9 @@ define([
                             feedbackAllowed: Utils.Feedback.state,
                             hashes: config.data.hashes,
                             password: config.data.password,
-                            isTemplate: config.data.isTemplate,
+                            isTemplate: isTemplate,
                             file: config.data.file,
+                            secureIframe: true,
                         };
                         for (var k in additionalPriv) { metaObj.priv[k] = additionalPriv[k]; }
 

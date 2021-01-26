@@ -29,6 +29,8 @@ define([
     nThen(function (waitFor) {
         $(waitFor());
     }).nThen(function (waitFor) {
+        SFCommonO.initIframe(waitFor);
+    }).nThen(function (waitFor) {
         var req = {
             cfg: requireConfig,
             req: [ '/common/loading.js' ],
@@ -53,14 +55,9 @@ define([
         };
         window.addEventListener('message', onMsg);
     }).nThen(function (/*waitFor*/) {
-        var hash = localStorage[Constants.userHashKey];
+        var hash = localStorage[Constants.userHashKey] || localStorage[Constants.fileHashKey];
         var drive = hash && ('#'+hash === window.location.hash);
         if (!window.location.hash) {
-            if (!hash) {
-                sessionStorage.redirectTo = '/debug/';
-                window.location.href = '/login/';
-                return;
-            }
             drive = true;
             window.location.hash = hash;
         } else {

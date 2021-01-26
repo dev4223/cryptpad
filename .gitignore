@@ -8,6 +8,8 @@ customize/
 customize/bg14.jpg
 .*.swp
 *.db
+/customize/
+customize
 messages.log
 .DS_Store
 www/scratch

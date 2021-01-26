@@ -1,3 +1,177 @@
+# 4.0.0 (A)
+
+We're very happy to introduce CryptPad v4.0!
+
+This release is the culmination of a great deal of work over the last year, in which we searched for the right metaphors and imagery to clearly represent what CryptPad is all about. We've reworked our logo, color theme, text on our static pages, and the icons throughout the platform to convey the calm and safety we want our users to feel.
+
+Our release schedule typically follows an alphabetical naming scheme, ranging from A for the first (or zero-th) release of the cycle to Z for the last, with a thematic name for each letter. In the rush of preparing translations and double-checking all of our changes we never found time to settle on a theme for this release, but we do find there's some value in maintaining the otherwise arbitrary rhythm we've followed all this time. The progression through the alphabet gives a sense of pace to what can otherwise seem like a endless stream of problems that need solving, and the end of the alphabet prompts us to build towards major milestones like this one.
+
+With that in mind, you can expect 25 more major releases in this cycle before version 5.0, roughly every three weeks or so depending on circumstances.
+
+## Goals
+
+The main intent of this release was to deploy our `rebrand` branch which had been in development for some time. Along the way we also made notable improvements to the sheet editor which will be mentioned below.
+
+## Update notes
+
+In the process of redesigning the platform we started using some new features of the LESS CSS pre-processor language that were not supported by the version of lesshint that we were using to scan for errors. We've updated that dev dependency to a newer version (4.5.0 => 6.3.7) which introduced a rather large number of minor dependencies. These are only used during development, not by the server itself, so this is unlikely to have any impact on the software itself.
+
+Otherwise, this release includes lots of changes to the platform's style sheets and static pages. If you've applied heavy customizations to your instance you might notice errors due to incompatibilities with your local changes. We recommend that you test your customizations against the latest release locally before updating a public instance to avoid service outages.
+
+To update from 3.25.1 to 4.0.0:
+
+1. Stop your server
+2. Get the latest code from the 4.0.0 tag
+3. Install the latest dependencies with `bower update` and `npm i`
+4. Restart your server
+
+## Features
+
+* We've built a new version of the web-assembly code used to convert between OnlyOffice's internal representation of spreadsheet data and standard formats like XLSX, ODS, and CSV. We've also improved the ability to print whole sheets and selections in the UI. This still depends on the host browser's support of the required web APIs, but it should work in common browsers except maybe Safari and Internet Explorer.
+* We found that certain issues reported via the built-in support ticket system were not easy to debug without knowing the id of the user's drive. Support tickets now include a `driveChannel` attribute to simplify this process.
+* We've added a variety of settings for the control of how your browser uses a local database to speed up loading times and display cached versions of documents even when disconnected from our server. These are available in the "confidentiality" section of the settings page (https://cryptpad.fr/settings/#security).
+
+Finally, the "rebrand" part of this release:
+
+* Our home page features our new logo, a cleaner layout, new text (notably dropping the use of "zero-knowledge" from our explanation), new app icons, softer colors, neater fonts, and a custom illustration of a document shredder that hints at how CryptPad works.
+* We no longer include a FAQ page with each instance, and instead link to relevant parts of our dedicated documentation platform (https://docs.cryptpad.fr) from any place that previously referenced the FAQ. This will make it easier for translators to focus on text for the platform's interface if they wish. An updated Frequently Asked Questions will be added to the documentation in the near future.
+* Each of our editors now features a dedicated favicon to make it easier to distinguish different CryptPad tabs in your browser.
+* The contact page now points to _Element_ instead of Riot, since the Matrix team rebranded in the last while as well.
+* The "pricing" or "features" page (features.html) reads the server's configured storage limits from a server endpoint and displays them, rather than hardcoding the default values in the text.
+* There is now a custom illustration of a person swallowing a key on the registration page to convey that CryptPad admins cannot restore access to documents if users lose or forget their credentials. This is underscored by highlights to the explanatory text displayed to the left of the form.
+* Our loading screen now features a much simpler color scheme instead of the vibrant blue blocks. This is part of an effort to pave the way for a _dark theme_ that we hope to introduce very soon.
+* Lastly, we've added a number of semantic cues in various places to improve the experience of users that rely on screen-readers. There's still a lot to do in this regard, but this big rewrite was a good opportunity to review some easy pain-points to alleviate.
+
+## Bug fixes
+
+* We found andd fixed a regression in the slide app which caused newly created documents to be initialized without a title.
+* Thanks to a helpful user-report we were able to identify an issue in our rich text editor's _comments_ system that prevented iOS users from typing.
+
+# ZyzomysPedunculatus' revenge (3.25.1)
+
+This minor release is primarily intended to fix some minor issues that were introduced or detected following our 3.25.0 release, but it also includes some major improvements that we want to test and stabilize before our upcoming 4.0.0 release.
+
+Features
+
+* Our recent introduction of a clientside cache for document content now allows us to load and display a readable copy of a document before the most recent history has been fully loaded from the server. You might notice that your drive and some document typees are now displayed in a "DISCONNECTED" of "OFFLINE" state until they gets the latest history. For now this just means the loading screen is removed soon so you can start reading, but it's also an essential improvement that will become even more useful when we introduce the use of service-workers for offline usage.
+* We've added an `offline` mode to the server so that anyone developing features in CryptPad can test its offline and caching features by disabling the websocket components of the server. Use `npm run offline` to launch in this mode.
+* We spent some time improving the support ticket components of the administration panel. Tickets are now shown in four categories: tickets from premium users, tickets from non-paying users, answered tickets, and closed tickets.
+* We also improved the readability of some of the server's activity logs by rounding off some numbers to display fewer decimal points. On a related note, log events indicating the completion of a file upload now display the size of the uploaded file.
+* Errors that occur when loading teams now trigger some basic telemetry to the server to indicate the error code. This should help us determine the origin of some annoying teams issues that several users have reported.
+* Users of the rich text editor should now find that their scroll position is maintained when they are at the bottom of the document and a remote users adds more text.
+
+Bug fixes
+
+* Shortly after deploying 3.25.0 we identified several cases in which its cache invalidation logic was not correctly detecting corrupted cache entries. This caused some documents to fail to load. We quickly disabled most caching until we got the chance to review. Since then, we've tested it much more thoroughly under situations which made it more likely to become corrupt. Our new cache invalidation logic seems to catch all the known cases, so we're re-enabling the use of the cache for encrypted files and most of our supported document types.
+* We found that a race condition in the logout process prevented the document cache from being cleared correctly. We now wait until the asynchronous cache eviction process completes before redirecting users to the login page.
+* We discovered that the `postMessage` API by which CryptPad's different iframes and workers communicate could not serialize certain error messages after recent changes. We've added some special logic to send such messages in a valid format as well as some extra error handling to better recover from and report failed transmissions.
+* In cases where user avatars fail to load (due to network issues or 404s) the first letter of the user's display name will be displayed instead
+* We found that shared folders were reconnecting to the server correctly after a network failure, however, some changes in the UI caused clients to incorrectly remain locked.
+* Some recent refactoring of some styles caused some buttons on the login page to inherit bootstrap's styles instead of our custom ones.
+* A third-party admin brought it to our attention that a library that was used for some development tests was being fetched via http instead of https, and was thus blocked by some of their local configuration parameters. We've updated its source to load via secure protocols only.
+* The recent replacement of a link to our faq with a link to our documentation platform violated some security headers and prevented the link from loading. We've fixed the inline link with some code to open this link in a compatible way.
+* Finally, we found a bug that caused custom colors in the slide app to revert to the default settings on page reloads. Custom slide colors should now be preserved.
+
+To update from 3.25.0 to 3.25.1:
+
+1. Stop your server
+2. Get the latest code with `git checkout 3.25.1`
+3. Install the latest dependencies with `bower update` and `npm i`
+4. Restart your server
+
+# ZyzomysPedunculatus (3.25.0)
+
+## Goals
+
+This is the last major release of our 3.0.0 release cycle. We wanted to mark the occasion with some big improvements to keep everyone happy in case we need to take some more time to prepare our upcoming 4.0.0 release.
+
+## Update notes
+
+This update introduces some major database optimizations that should decrease both CPU and disk usage over time as users request resources and prime an on-disk cache for the next time.
+
+We've also introduce the ability to archive illegal or otherwise objectionable material from the admin panel assuming you possess the ability to load the content in question. It's also possible to restore archived content via an adjacent form field on the admin panel as long as it has not been permanently deleted. Due to a quirk in how ownership of uploaded files works, restored files will not retain their "owners" property. We hope to fix this in a future release.
+
+We've also made some minor changes to the example NGINX config file provided in `cryptpad/docs/example.nginx.confg`, specifically in [this commit](https://github.com/xwiki-labs/cryptpad/commit/2647acbb78643e651b71d2d4f74c2f66e264a258). CryptPad will probably work if you don't apply these changes to your nginx conf, but some functional improvements depend on the exposed headers.
+
+To upgrade from 3.24.0 to 3.25.0:
+
+1. Update your NGINX config as mentioned above.
+2. Stop your nodejs server.
+3. Pull the latest code using git (from the `3.25.0` tag or the `main` branch)
+4. Ensure you have the latest clientside and serverside dependencies with `bower update` and `npm install`.
+5. Restart  the nodejs server.
+
+## Features
+
+* This release makes a lot of changes to how content is loaded over the network.
+  * Most notably, CryptPad now employs a client-side cache based on the the _indexedDB API_. Browsers that support this functionality will opportunistically store messages in a local cache for the next time they need them. This should make a considerable difference in how quickly you're able to load a pad, particularly if you accessing the server over a low-bandwidth network.
+  * Uploaded files (images, PDFs, etc.) are also cached in a similar way. Once you'd loaded an asset, your client will prefer to load its local copy instead of the server.
+  * We've updated the code for our _full drive backup_ functionality so that it uses the local cache to load files more quickly. In addition to this, backing up the contents of your drive will also populate the cache as though you had loaded your documents in the normal fashion. This cache will persist until it is invalidated (due to the authoritative document having been deleted or had its history trimmed) or until you have logged out.
+  * We've added the ability to configure the maximum size for automatically downloaded files. Any encrypted files that are above this size will instead require manual interaction to begin downloading. Files that are larger than this limit which are already loaded in your cache will still be automatically displayed.
+* We've also changed a lot of the UI related to encrypted file uploads and downloads:
+  * Encrypted files can display buttons instead of the intended media under a variety of circumstances (if they are larger than your configured limit or if there is no applicable rendering mode). The styles for these buttons are now much more consistent with those found throughout the rest of the platform.
+  * The same assets should now display progress bars when downloading and decrypting encrypted media.
+  * When the same asset is embedded into a document in more than one location it used to be possible to trigger two (or more) concurrent decryption processes. We've modified the rendering process so that duplicates are detected and rendered simultaneously after the relevant assets have been decrypted (once).
+  * We noticed that some old code to filter out forbidden content from rich text pads was interfering with encrypted media. We've clarified the filtering rules to preserve such content (audio, video, iframes) when it occurs within an acceptable context.
+  * We've fixed some inconsistencies with media styles and functionality across different editors. Most types of media now allow you to right-click and choose to _share_ (open that asset's share menu) or open it in a different context (in the file app or in the relevant editor where this behaviour is supported).
+  * The _file_ app has been greatly simplified. It now uses the same methods to render encrypted media as is used elsewhere, so it also displays progress and has a more consistent UI.
+  * The file uploads/downloads table has also been improved somewhat:
+    * Download progress is displayed for groups of items when downloading a folder from your drive.
+    * We found and removed a hard-coded translation from the table's header.
+* In keeping with the theme of network traffic and files we've also made some improvements to policies for users' storage:
+  * Users should now be prompted to trim the history of very large documents when viewing them, saving space for the server operator as well as freeing up some of the user's quota.
+  * Users will also be prompted to use similar functionality available through the settings page when the history of their drive and other account-related functionality is consuming a significant amount of their quota.
+  * Documents that you own used to be automatically added to your drive when viewed if they weren't already present. This was originally intended as an integrity check and a means to recover from incorrectly removed entries in your drive, however, as we now support the removal of owned elements from your drive without destroying them this only serves as an annoyance. As such, we have dropped this functionality.
+  * The whiteboard editor allows users to insert encrypted images into whiteboards, but only up to a certain size. Before it would just warn you that your image was too large. Now it provides the actual size limit that you've exceeded.
+  * The prompt to store uploads in your drive is now suppressed when uploading images via the support ticket panel.
+
+## Bug fixes
+
+* This release includes a fix for a very severe bug in Chrome and its derivatives where attempting to open a URL from within our sandboxing system would crash the browser entirely. This version works around the problem by _not doing that_.
+* We've improved offline detection such that "offline" status is specific to particular resources like your drive, teams, and shared folders rather than treating your account as simply "online or offline".
+* We've optimized one of our less style sheet mixins that was used in a lot of places at a more specific scope than was necessary. This resulted in more time compiling styles and higher storage space requirements for the css cache in localStorage.
+* A small helper function that was intended to stop listening for `enter` and `esc` keypresses after closing a modal was overly zealous and stopped listening after _any keypress_. This made it so that any prompt with an input field did not correctly submit or cancel when pressing `enter` or `esc` after  typing some text.
+* Various browsers now require the request for the permission to send notifications to originate from a "click" event, so CryptPad now opens a dialog prompting you to allow (or disallow) permission if you haven't already made that decision.
+* Modern browsers commonly prevent tabs from opening new windows unless you've explicitly enabled that behaviour (it's an important feature), however, in some cases the indication that a new tab was blocked can be very subtle and some of our users did not notice it. We now check whether attempts to open a new tab were successful, and prompt the user to enable this behaviour so that CryptPad can perform regular actions like opening a pad from the drive.
+* After some deep investigation we identified a number of scenarios where contact requests would behave incorrectly, such as not triggering a notification. Contact requests should now be much more stable. On a related note, it's now possible to cancel a pending contact request from the concerned user's profile.
+
+# YunnanLakeNewt (3.24.0)
+
+## Goals
+
+We are once again working to develop some significant new features. This release is fairly small but includes some significant changes to detect and handle a variety of errors.
+
+## Update notes
+
+This release includes some minor corrections the recommended NGINX configuration supplied in `cryptpad/docs/example.nginx.conf`.
+
+To update from 3.23.2 to 3.24.0:
+
+1. Update your NGINX config to replicate the most recent changes and reload NGINX to apply them.
+2. Stop the nodejs server.
+3. Pull the latest code from the `3.24.0` tag or the `main` branch using `git`.
+4. Ensure you have the latest clientside and serverside dependencies with `bower update` and `npm install`.
+5. Restart the nodejs server.
+
+## Features
+
+* A variety of CryptPad's pages now feature a much-improved loading screen which provides a more informative account of what is being loaded. It also implements some generic error handling to detect and report when something has failed in a catastrophic way. This is intended to both inform users that the page is in a broken state as well as to improve the quality of the debugging information they can provide to us so that we can fix the underlying cause.
+* It is now possible to create spreadsheets from templates. Template functionality has existed for a long time in our other editors, however, OnlyOffice's architecture differs significantly and required the implementation of a wholly different system.
+* One user reported some confusion regarding the use of the Kanban app's _tag_ functionality. We've updated the UI to be a little more informative.
+* The "table of contents" in rich text pads now includes "anchors" created via the editor's toolbar.
+
+## Bug fixes
+
+* Recent changes to CryptPad's recommended CSP headers enabled Firefox to export spreadsheets to XLSX format, but they also triggered some regressions due to a number of incompatible APIs.
+  * Our usage of the `sessionStorage` for the purpose of passing important information to editors opened in a new tab stopped working. This meant that when you created a document in a folder, the resulting new tab would not receive the argument describing where it should be stored, and would instead save it to the default location. We've addressed this by replacing our usage of sessionStorage with a new format for passing the same arguments via the hash in the new document's URL.
+  * The `window.print` API also failed in a variety of cases. We've updated the relevant CSP headers to only be applied on the sheet editor (to support XSLX export) but allow printing elsewhere. We've also updated some print styles to provide more appealing results.
+* The table of contents available in rich text pads failed to scroll when there were a sufficient number of heading to flow beyond the length of the page. Now a scrollbar appears when necessary.
+* We discovered a number of cases where the presence of an allow list prevented some valid behaviour due to the server incorrectly concluding that users were not authenticated. We've improved the client's ability to detect these cases and re-authenticate when necessary.
+* We also found that when the server was under very heavy load some database queries were timing out because they were slow (but not stopped). We've addressed this to only terminate such queries if they have been entirely inactive for several minutes.
+* It was possible for "safe links" to include a mode ("edit" or "view") which did not match the rights of the user opening them. For example, if a user loaded a safe link with edit rights though they only had read-only access via their "viewer" role in a team. CryptPad will now recover from such cases and open the document with the closest set of access rights that they possess.
+* We found that the server query `"IS_NEW_PAD"` could return an error but that clients would incorrectly interpret such a response as a `false`. This has been corrected.
+* Finally, we've modified the "trash" UI for user and team drives such that when users attempt to empty their trash of owned shared folders they are prompted to remove the items or delete them from the server entirely, as they would be with other owned assets.
+
 # XerusDaamsi reloaded (3.23.2)
 
 A number of instance administrators reported issues following our 3.23.1 release. We suspect the issues were caused by applying the recommended update steps out of order which would result in the incorrect HTTP header values getting cached for the most recent version of a file. Since the most recently updated headers modified some security settings, this caused a catastrophic error on clients receiving the incorrect headers which caused them to fail to load under certain circumstances.

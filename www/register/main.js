@@ -37,9 +37,9 @@ define([
         var $passwd = $('#password');
         var $confirm = $('#password-confirm');
 
-        if (sessionStorage.login_user) {
-            delete sessionStorage.login_user;
-            $uname.val(sessionStorage.login_user);
+        if (localStorage.login_user) {
+            $uname.val(localStorage.login_user);
+            delete localStorage.login_user;
         }
 
         [ $uname, $passwd, $confirm]
@@ -100,7 +100,7 @@ define([
             }
 
             setTimeout(function () {
-            UI.confirm("<h2 class='bright msg'>" + Messages.register_warning + "</h2>",
+            UI.confirm("<h2 class='msg'>" + Messages.register_warning + "</h2>" + Messages.register_warning_note,
             function (yes) {
                 if (!yes) { return; }
 
@@ -118,8 +118,8 @@ define([
 /*  If we're certain that we aren't using these "*Class" APIs
     anywhere else then we can deprecate them and make this a
     custom modal in common-interface (or here).  */
-                cancelClass: 'btn.btn-safe',
-                okClass: 'btn.btn-danger',
+                cancelClass: 'btn.btn-cancel.btn-register',
+                okClass: 'btn.btn-danger.btn-register',
                 reverseOrder: true,
                 done: function ($dialog) {
                     $dialog.find('> div').addClass('half');

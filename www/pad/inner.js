@@ -46,7 +46,9 @@ define([
     '/common/test.js',
 
     '/bower_components/diff-dom/diffDOM.js',
+    '/bower_components/file-saver/FileSaver.min.js',
 
+    'css!/customize/src/print.css',
     'css!/bower_components/bootstrap/dist/css/bootstrap.min.css',
     'css!/bower_components/components-font-awesome/css/font-awesome.min.css',
     'less!/pad/app-pad.less'
@@ -461,7 +463,9 @@ define([
         setTimeout(function() { // Just in case
             var tags = dom.querySelectorAll('media-tag:empty');
             Array.prototype.slice.call(tags).forEach(function(el) {
-                MediaTag(el);
+                var mediaObject = MediaTag(el, {
+                    body: dom
+                });
                 $(el).on('keydown', function(e) {
                     if ([8, 46].indexOf(e.which) !== -1) {
                         $(el).remove();
@@ -471,13 +475,17 @@ define([
                 var observer = new MutationObserver(function(mutations) {
                     mutations.forEach(function(mutation) {
                         if (mutation.type === 'childList') {
-                            var list_values = [].slice.call(el.children);
+                            var list_values = slice(el.children)
+                                                .map(function (el) { return el.outerHTML; })
+                                                .join('');
                             mediaTagMap[el.getAttribute('src')] = list_values;
+                            if (mediaObject.complete) { observer.disconnect(); }
                         }
                     });
                 });
                 observer.observe(el, {
                     attributes: false,
+                    subtree: true,
                     childList: true,
                     characterData: false
                 });
@@ -490,9 +498,10 @@ define([
         Array.prototype.slice.call(tags).forEach(function(tag) {
             var src = tag.getAttribute('src');
             if (mediaTagMap[src]) {
-                mediaTagMap[src].forEach(function(n) {
-                    tag.appendChild(n.cloneNode());
-                });
+                tag.innerHTML = mediaTagMap[src];
+                /*mediaTagMap[src].forEach(function(n) {
+                    tag.appendChild(n.cloneNode(true));
+                });*/
             }
         });
     };
@@ -500,6 +509,12 @@ define([
     var mkPrintButton = function (framework, editor) {
         var $printButton = framework._.sfCommon.createButton('print', true);
         $printButton.click(function () {
+            /*
+            // NOTE: alternative print system in case we keep having more issues on Firefox
+            var $iframe = $('html').find('iframe');
+            var iframe = $iframe[0].contentWindow;
+            iframe.print();
+            */
             editor.execCommand('print');
             framework.feedback('PRINT_PAD');
         });
@@ -643,9 +658,25 @@ define([
             }, 500); // 500ms to make sure it is sent after chainpad sync
         };
 
+        var isAnchor = function (el) { return el.nodeName === 'A'; };
+        var getAnchorName = function (el) {
+            return el.getAttribute('id') ||
+                el.getAttribute('data-cke-saved-name') ||
+                el.getAttribute('name') ||
+                Util.stripTags($(el).text());
+        };
+
         var updateTOC = Util.throttle(function () {
             var toc = [];
-            $inner.find('h1, h2, h3').each(function (i, el) {
+            $inner.find('h1, h2, h3, a[id][data-cke-saved-name]').each(function (i, el) {
+                if (isAnchor(el)) {
+                    return void toc.push({
+                        level: 2,
+                        el: el,
+                        title: getAnchorName(el),
+                    });
+                }
+
                 toc.push({
                     level: Number(el.tagName.slice(1)),
                     el: el,
@@ -654,6 +685,8 @@ define([
             });
             var content = [h('h2', Messages.markdown_toc)];
             toc.forEach(function (obj) {
+                var title = (obj.title || "").trim();
+                if (!title) { return; }
                 // Only include level 2 headings
                 var level = obj.level;
                 var a = h('a.cp-pad-toc-link', {
@@ -665,7 +698,7 @@ define([
                     if (!obj.el || UIElements.isVisible(obj.el, $inner)) { return; }
                     obj.el.scrollIntoView();
                 });
-                a.innerHTML = obj.title;
+                a.innerHTML = title;
                 content.push(h('p.cp-pad-toc-'+level, a));
             });
             $toc.html('').append(content);
@@ -695,6 +728,11 @@ define([
             // Get cursor position
             cursor.offsetUpdate();
             var oldText = inner.outerHTML;
+
+            // Get scroll position
+            var sTop = $iframe.scrollTop();
+            var sTopMax = $iframe.innerHeight() - $('iframe').innerHeight();
+            var scrollMax = Math.abs(sTop - sTopMax) < 1;
 
             // Apply the changes
             var patch = (DD).diff(inner, userDocStateDom);
@@ -732,6 +770,10 @@ define([
             comments.onContentUpdate();
 
             updateTOC();
+
+            if (scrollMax) {
+                $iframe.scrollTop($iframe.innerHeight());
+            }
         });
 
         framework.setTextContentGetter(function() {
@@ -1059,6 +1101,9 @@ define([
                     border: Messages.pad_mediatagBorder,
                     preview: Messages.pad_mediatagPreview,
                     'import': Messages.pad_mediatagImport,
+                    download: Messages.download_mt_button,
+                    share: Messages.pad_mediatagShare,
+                    open: Messages.pad_mediatagOpen,
                     options: Messages.pad_mediatagOptions
                 };
                 Ckeditor._commentsTranslations = {
@@ -1091,7 +1136,7 @@ define([
 */
                 Ckeditor.dom.element.prototype.setHtml = function(a){
                     if (/callFunction/.test(a)) {
-                        a = a.replace(/on(mousedown|blur|keydown|focus|click|dragstart)/g, function (value) {
+                        a = a.replace(/on(mousedown|blur|keydown|focus|click|dragstart|mouseover|mouseout)/g, function (value) {
                             return 'o' + value;
                         });
                     }
@@ -1138,6 +1183,28 @@ define([
                 window.__defineGetter__('_cke_htmlToLoad', function() {});
                 editor.plugins.mediatag.import = function($mt) {
                     framework._.sfCommon.importMediaTag($mt);
+                };
+                editor.plugins.mediatag.download = function($mt) {
+                    var media = Util.find($mt, [0, '_mediaObject']);
+                    if (!media) { return void console.error('no media'); }
+                    if (!media.complete) { return void UI.warn(Messages.mediatag_notReady); }
+                    if (!(media && media._blob)) { return void console.error($mt); }
+                    window.saveAs(media._blob.content, media.name);
+                };
+                editor.plugins.mediatag.open = function($mt) {
+                    var hash = framework._.sfCommon.getHashFromMediaTag($mt);
+                    framework._.sfCommon.openURL(Hash.hashToHref(hash, 'file'));
+                };
+                editor.plugins.mediatag.share = function($mt) {
+                    var data = {
+                        file: true,
+                        pathname: '/file/',
+                        hashes: {
+                            fileHash: framework._.sfCommon.getHashFromMediaTag($mt)
+                        },
+                        title: Util.find($mt[0], ['_mediaObject', 'name']) || ''
+                    };
+                    framework._.sfCommon.getSframeChannel().event('EV_SHARE_OPEN', data);
                 };
                 Links.init(Ckeditor, editor);
             }).nThen(function() {

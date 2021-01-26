@@ -229,7 +229,6 @@ MessengerUI, Messages) {
         // Editors
         var pendingFriends = Common.getPendingFriends(); // Friend requests sent
         var friendRequests = Common.getFriendRequests(); // Friend requests received
-        var friendTo = +new Date() - (2 * 24 * 3600 * 1000);
         editUsersNames.forEach(function (data) {
             var name = data.name || Messages.anonymous;
             var $span = $('<span>', {'class': 'cp-avatar'});
@@ -297,7 +296,7 @@ MessengerUI, Messages) {
                 }
             } else if (Common.isLoggedIn() && data.curvePublic && !friends[data.curvePublic]
                 && !priv.readOnly) {
-                if (pendingFriends[data.curvePublic] && pendingFriends[data.curvePublic] > friendTo) {
+                if (pendingFriends[data.curvePublic]) {
                     $('<button>', {
                         'class': 'fa fa-hourglass-half cp-toolbar-userlist-button',
                         'title': Messages.profile_friendRequestSent
@@ -322,7 +321,10 @@ MessengerUI, Messages) {
                     }).appendTo($nameSpan).click(function (e) {
                         e.stopPropagation();
                         Common.sendFriendRequest(data, function (err, obj) {
-                            if (err || (obj && obj.error)) { return void console.error(err || obj.error); }
+                            if (err || (obj && obj.error)) {
+                                UI.warn(Messages.error);
+                                return void console.error(err || obj.error);
+                            }
                         });
                     });
                 }
@@ -338,7 +340,7 @@ MessengerUI, Messages) {
             if (data.profile) {
                 $span.addClass('cp-userlist-clickable');
                 $span.click(function () {
-                    window.open(origin+'/profile/#' + data.profile);
+                    Common.openURL(origin+'/profile/#' + data.profile);
                 });
             }
             Common.displayAvatar($span, data.avatar, name, function () {
@@ -364,6 +366,9 @@ MessengerUI, Messages) {
                 if (metadataMgr.isConnected()) {toolbar.connected = true;}
                 if (!toolbar.connected) { return; }
                 updateUserList(toolbar, config);
+            });
+            setTimeout(function () {
+                updateUserList(toolbar, config, true);
             });
         }
     };
@@ -773,15 +778,11 @@ MessengerUI, Messages) {
             ]);
             $msg.find('a.cp-pnp-login').click(function (ev) {
                 ev.preventDefault();
-                Common.setLoginRedirect(function () {
-                    window.parent.location = o + '/login/';
-                });
+                Common.setLoginRedirect('login');
             });
             $msg.find('a.cp-pnp-register').click(function (ev) {
                 ev.preventDefault();
-                Common.setLoginRedirect(function () {
-                    window.parent.location = o + '/register/';
-                });
+                Common.setLoginRedirect('register');
             });
             $('.cp-toolbar-top').append($msg);
             //UI.addTooltips();
@@ -834,18 +835,18 @@ MessengerUI, Messages) {
             title: buttonTitle,
             'class': "cp-toolbar-link-logo"
         }).append(UIElements.getSvgLogo());
-        
+
         /*.append($('<img>', {
             //src: '/customize/images/logo_white.png?' + ApiConfig.requireConf.urlArgs
-            src: '/customize/main-favicon.png?' + ApiConfig.requireConf.urlArgs
+            src: '/customize/favicon/main-favicon.png?' + ApiConfig.requireConf.urlArgs
         }));*/
         var onClick = function (e) {
             e.preventDefault();
             if (e.ctrlKey) {
-                window.open(href);
+                Common.openURL(href);
                 return;
             }
-            window.parent.location = href;
+            Common.gotoURL(href);
         };
 
         var onContext = function (e) { e.stopPropagation(); };
@@ -883,6 +884,14 @@ MessengerUI, Messages) {
                 $spin.text(Messages.saved);
             }, /*local ? 0 :*/ SPINNER_DISAPPEAR_TIME);
         };
+        if (config.spinner) {
+            var h = function () {
+                onSynced();
+                try { config.spinner.onSync.unreg(h); } catch (e) { console.error(e); }
+            };
+            config.spinner.onSync.reg(h);
+            return;
+        }
         config.sfCommon.whenRealtimeSyncs(onSynced);
     };
     var ks = function (toolbar, config, local) {
@@ -894,6 +903,15 @@ MessengerUI, Messages) {
         if (config.readOnly === 1) { return; }
         var $spin = $('<span>', {'class': SPINNER_CLS}).appendTo(toolbar.title);
         $spin.text(Messages.synchronizing);
+
+        if (config.spinner) {
+            config.spinner.onPatch.reg(ks(toolbar, config));
+            typing = 0;
+            setTimeout(function () {
+                kickSpinner(toolbar, config);
+            });
+            return $spin;
+        }
 
         if (config.realtime) {
             config.realtime.onPatch(ks(toolbar, config));
@@ -994,6 +1012,29 @@ MessengerUI, Messages) {
             h('div.cp-notifications-empty', Messages.notifications_empty)
         ]);
         var pads_options = [div];
+
+        var metadataMgr = config.metadataMgr;
+        var privateData = metadataMgr.getPrivateData();
+        if (!privateData.notifications) {
+            var allowNotif = h('div.cp-notifications-gotoapp', h('p', Messages.allowNotifications));
+            pads_options.unshift(h("hr"));
+            pads_options.unshift(allowNotif);
+            var $allow = $(allowNotif).click(function () {
+                Common.getSframeChannel().event('Q_ASK_NOTIFICATION', null, function (e, allow) {
+                    if (!allow) { return; }
+                    $(allowNotif).remove();
+                });
+            });
+            var onChange = function () {
+                var privateData = metadataMgr.getPrivateData();
+                if (!privateData.notifications) { return; }
+                $allow.remove();
+                metadataMgr.off('change', onChange);
+            };
+            metadataMgr.onChange(onChange);
+        }
+
+
         if (Common.isLoggedIn()) {
             pads_options.unshift(h("hr"));
             pads_options.unshift(openNotifsApp);
@@ -1250,8 +1291,8 @@ MessengerUI, Messages) {
                 if (typeof el !== "string" || !el.trim()) { return; }
                 if (typeof tb[el] === "function") {
                     if (!init && config.displayed.indexOf(el) !== -1) { return; } // Already done
-                    toolbar[el] = tb[el](toolbar, config);
                     if (!init) { config.displayed.push(el); }
+                    toolbar[el] = tb[el](toolbar, config);
                 }
             });
             checkSize();
@@ -1298,6 +1339,10 @@ MessengerUI, Messages) {
                 }, 500);
                 toolbar.spinner.text(Messages.reconnecting);
             }
+        };
+        toolbar.ready = function () {
+            toolbar.connected = true;
+            kickSpinner(toolbar, config);
         };
 
         toolbar.errorState = function (state, error) {
@@ -1364,6 +1409,18 @@ MessengerUI, Messages) {
             toolbar.title.toggleClass('cp-toolbar-unsync', bool);
             if (bool && toolbar.spinner) {
                 toolbar.spinner.text(Messages.historyText);
+            } else {
+                kickSpinner(toolbar, config);
+            }
+        };
+
+        toolbar.offline = function (bool) {
+            toolbar.connected = !bool; // Can't edit title
+            toolbar.history = bool; // Stop "Initializing" state
+            toolbar.isErrorState = bool; // Stop kickSpinner
+            toolbar.title.toggleClass('cp-toolbar-unsync', bool); // "read only" next to the title
+            if (bool && toolbar.spinner) {
+                toolbar.spinner.text(Messages.Offline);
             } else {
                 kickSpinner(toolbar, config);
             }

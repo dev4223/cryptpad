@@ -60,6 +60,10 @@ var app = Express();
     }
 }());
 
+var applyHeaderMap = function (res, map) {
+    for (let header in map) { res.setHeader(header, map[header]); }
+};
+
 var setHeaders = (function () {
     // load the default http headers unless the admin has provided their own via the config file
     var headers;
@@ -96,14 +100,21 @@ var setHeaders = (function () {
     }
     if (Object.keys(headers).length) {
         return function (req, res) {
+            // apply a bunch of cross-origin headers for XLSX export in FF and printing elsewhere
+            applyHeaderMap(res, {
+                "Cross-Origin-Resource-Policy": 'cross-origin',
+                "Cross-Origin-Opener-Policy": /^\/sheet\//.test(req.url)? 'same-origin': '',
+                "Cross-Origin-Embedder-Policy": 'require-corp',
+            });
+
+            // targeted CSP, generic policies, maybe custom headers
             const h = [
-                    ///^\/pad\/inner\.html.*/,
                     /^\/common\/onlyoffice\/.*\/index\.html.*/,
                     /^\/(sheet|ooslide|oodoc)\/inner\.html.*/,
                 ].some((regex) => {
                     return regex.test(req.url);
                 }) ? padHeaders : headers;
-            for (let header in h) { res.setHeader(header, h[header]); }
+            applyHeaderMap(res, h);
         };
     }
     return function () {};
@@ -125,6 +136,20 @@ app.head(/^\/common\/feedback\.html/, function (req, res, next) {
 });
 }());
 
+app.use('/blob', function (req, res, next) {
+    if (req.method === 'HEAD') {
+        Express.static(Path.join(__dirname, (config.blobPath || './blob')), {
+            setHeaders: function (res, path, stat) {
+                res.set('Access-Control-Allow-Origin', '*');
+                res.set('Access-Control-Allow-Headers', 'Content-Length');
+                res.set('Access-Control-Expose-Headers', 'Content-Length');
+            }
+        })(req, res, next);
+        return;
+    }
+    next();
+});
+
 app.use(function (req, res, next) {
     if (req.method === 'OPTIONS' && /\/blob\//.test(req.url)) {
         res.setHeader('Access-Control-Allow-Origin', '*');
@@ -139,6 +164,7 @@ app.use(function (req, res, next) {
 
     setHeaders(req, res);
     if (/[\?\&]ver=[^\/]+$/.test(req.url)) { res.setHeader("Cache-Control", "max-age=31536000"); }
+    else { res.setHeader("Cache-Control", "no-cache"); }
     next();
 });
 
@@ -190,6 +216,7 @@ var serveConfig = (function () {
                 adminKeys: Env.admins,
                 inactiveTime: Env.inactiveTime,
                 supportMailbox: Env.supportMailbox,
+                defaultStorageLimit: Env.defaultStorageLimit,
                 maxUploadSize: Env.maxUploadSize,
                 premiumUploadSize: Env.premiumUploadSize,
             }, null, '\t'),
@@ -286,6 +313,7 @@ nThen(function (w) {
         Env.Log = _log;
         config.log = _log;
 
+        if (Env.OFFLINE_MODE) { return; }
         if (config.externalWebsocketURL) { return; }
 
         require("./lib/api").create(Env);

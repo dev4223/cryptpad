@@ -67,7 +67,7 @@ define([
 
         '["DIV",{"id":"quot"},[["P",{},["\\"pewpewpew\\""]]]]',
 
-        '["DIV",{"id":"widget"},[["DIV",{"class":"cke_widget_wrapper cke_widget_block","contenteditable":"false","data-cke-display-name":"macro:velocity","data-cke-filter":"off","data-cke-widget-id":"0","data-cke-widget-wrapper":"1","tabindex":"-1"},[["DIV",{"class":"macro cke_widget_element","data-cke-widget-data":"%7B%22classes%22%3A%7B%22macro%22%3A1%7D%7D","data-cke-widget-keep-attr":"0","data-cke-widget-upcasted":"1","data-macro":"startmacro:velocity|-||-|Here is a macro","data-widget":"xwiki-macro"},[["P",{},["Here is a macro"]]]],["SPAN",{"class":"cke_reset cke_widget_drag_handler_container","style":"background: rgba(220, 220, 220, 0.5) url(\\"/customize/cryptofist_small.png\\") repeat scroll 0% 0%; top: -15px; left: 0px; display: block;"},[["IMG",{"class":"cke_reset cke_widget_drag_handler","data-cke-widget-drag-handler":"1","height":"15","src":"data:image/gif;base64,R0lGODlhAQABAPABAP///wAAACH5BAEKAAAALAAAAAABAAEAAAICRAEAOw==","title":"Click and drag to move","width":"15"},[]]]]]]]]',
+        '["DIV",{"id":"widget"},[["DIV",{"class":"cke_widget_wrapper cke_widget_block","contenteditable":"false","data-cke-display-name":"macro:velocity","data-cke-filter":"off","data-cke-widget-id":"0","data-cke-widget-wrapper":"1","tabindex":"-1"},[["DIV",{"class":"macro cke_widget_element","data-cke-widget-data":"%7B%22classes%22%3A%7B%22macro%22%3A1%7D%7D","data-cke-widget-keep-attr":"0","data-cke-widget-upcasted":"1","data-macro":"startmacro:velocity|-||-|Here is a macro","data-widget":"xwiki-macro"},[["P",{},["Here is a macro"]]]],["SPAN",{"class":"cke_reset cke_widget_drag_handler_container","style":"background: rgba(220, 220, 220, 0.5) repeat scroll 0% 0%; top: -15px; left: 0px; display: block;"},[["IMG",{"class":"cke_reset cke_widget_drag_handler","data-cke-widget-drag-handler":"1","height":"15","src":"data:image/gif;base64,R0lGODlhAQABAPABAP///wAAACH5BAEKAAAALAAAAAABAAEAAAICRAEAOw==","title":"Click and drag to move","width":"15"},[]]]]]]]]',
 
     ];
 
@@ -335,6 +335,12 @@ define([
     }, "test support for ugly tracking query paramaters in url");
 
     assert(function (cb) {
+        var url = '//cryptpad.fr/pad/#/2/pad/edit/oRE0oLCtEXusRDyin7GyLGcS/';
+        var parsed = Hash.isValidHref(url);
+        cb(!parsed);
+    }, "test that protocol relative URLs are rejected");
+
+    assert(function (cb) {
         var keys = Block.genkeys(Nacl.randomBytes(64));
         var hash = Block.getBlockHash(keys);
         var parsed = Block.parseBlockHash(hash);
@@ -349,7 +355,7 @@ define([
         var v3 = Hash.isValidHref('/pad');
         var v4 = Hash.isValidHref('/pad/');
 
-        var res = v1 && v2 && v3 && v4;
+        var res = Boolean(v1 && v2 && v3 && v4);
         cb(res);
         if (!res) {
             console.log(v1, v2, v3, v4);
@@ -361,7 +367,7 @@ define([
         var v3 = Hash.isValidHref('/pad#'); // Invalid
         var v4 = Hash.isValidHref('/pad/#');
 
-        var res = v1 && v2 && v3 && v4;
+        var res = Boolean(v1 && v2 && v3 && v4);
         cb(res);
         if (!res) {
             console.log(v1, v2, v3, v4);
@@ -373,7 +379,7 @@ define([
         var v3 = Hash.isValidHref('https://cryptpad.fr/pad/#67b8385b07352be53e40746d2be6ccd7XAYSuJYYqa9NfmInyHci7LNy');
         var v4 = Hash.isValidHref('/pad/#/2/pad/edit/HGu0tK2od-2BBnwAz2ZNS-t4/p/embed');
 
-        var res = v1 && v2 && v3 && v4;
+        var res = Boolean(v1 && v2 && v3 && v4);
         cb(res);
         if (!res) {
             console.log(v1, v2, v3, v4);

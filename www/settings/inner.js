@@ -51,7 +51,7 @@ define([
             'cp-settings-info-block',
             'cp-settings-displayname',
             'cp-settings-language-selector',
-            'cp-settings-resettips',
+            'cp-settings-mediatag-size',
             'cp-settings-change-password',
             'cp-settings-delete'
         ],
@@ -60,8 +60,10 @@ define([
             'cp-settings-autostore',
             'cp-settings-safe-links',
             'cp-settings-userfeedback',
+            'cp-settings-cache',
         ],
         'drive': [
+            'cp-settings-resettips',
             'cp-settings-drive-duplicate',
             'cp-settings-thumbnails',
             'cp-settings-drive-backup',
@@ -358,6 +360,54 @@ define([
         return $div;
     };
 
+    makeBlock('cache', function (cb) {
+        var store = window.cryptpadStore;
+
+        var $cbox = $(UI.createCheckbox('cp-settings-cache',
+            Messages.settings_cacheCheckbox,
+            false, { label: { class: 'noTitle' } }));
+        var spinner = UI.makeSpinner($cbox);
+
+        // Checkbox: "Enable safe links"
+        var $checkbox = $cbox.find('input').on('change', function() {
+            spinner.spin();
+            var val = !$checkbox.is(':checked') ? '1' : undefined;
+            store.put('disableCache', val, function () {
+                sframeChan.query('Q_CACHE_DISABLE', {
+                    disabled: Boolean(val)
+                }, function () {
+                    spinner.done();
+                });
+            });
+        });
+
+        store.get('disableCache', function (val) {
+            if (!val) {
+                $checkbox.attr('checked', 'checked');
+            }
+        });
+
+        var button = h('button.btn.btn-danger', [
+            h('i.fa.fa-trash-o'),
+            h('span', Messages.settings_cacheButton)
+        ]);
+        var buttonContainer = h('div.cp-settings-clear-cache', button);
+        var spinner2 = UI.makeSpinner($(buttonContainer));
+        UI.confirmButton(button, {
+            classes: 'btn-danger'
+        }, function () {
+            spinner2.spin();
+            sframeChan.query('Q_CLEAR_CACHE', null, function() {
+                spinner2.done();
+            });
+        });
+
+        cb([
+            $cbox[0],
+            buttonContainer
+        ]);
+    }, true);
+
     create['delete'] = function() {
         if (!common.isLoggedIn()) { return; }
         var $div = $('<div>', { 'class': 'cp-settings-delete cp-sidebarlayout-element' });
@@ -576,6 +626,58 @@ define([
         cb(form);
     }, true);
 
+    makeBlock('mediatag-size', function(cb) {
+        var $inputBlock = $('<div>', {
+            'class': 'cp-sidebarlayout-input-block',
+        });
+
+        var spinner;
+        var $input = $('<input>', {
+            'min': -1,
+            'max': 1000,
+            type: 'number',
+        }).appendTo($inputBlock);
+
+        var oldVal;
+
+        var todo = function () {
+            var val = parseInt($input.val());
+            if (typeof(val) !== 'number' || isNaN(val)) { return UI.warn(Messages.error); }
+            if (val === oldVal) { return; }
+            spinner.spin();
+            common.setAttribute(['general', 'mediatag-size'], val, function (err) {
+                if (err) {
+                    spinner.hide();
+                    console.error(err);
+                    return UI.warn(Messages.error);
+                }
+                oldVal = val;
+                spinner.done();
+                UI.log(Messages.saved);
+            });
+        };
+        var $save = $(h('button.btn.btn-primary', Messages.settings_save)).appendTo($inputBlock);
+        spinner = UI.makeSpinner($inputBlock);
+
+        $save.click(todo);
+        $input.on('keyup', function(e) {
+            if (e.which === 13) { todo(); }
+        });
+
+        common.getAttribute(['general', 'mediatag-size'], function(e, val) {
+            if (e) { return void console.error(e); }
+            if (typeof(val) !== 'number' || isNaN(val)) {
+                oldVal = 5;
+                $input.val(5);
+            } else {
+                oldVal = val;
+                $input.val(val);
+            }
+        });
+
+        cb($inputBlock);
+    }, true);
+
     // Security
 
     makeBlock('safe-links', function(cb) {
@@ -777,7 +879,7 @@ define([
                         Feedback.send('FULL_DRIVE_EXPORT_COMPLETE');
                         saveAs(blob, filename);
                     }, errors);
-                }, ui.update);
+                }, ui.update, common.getCache());
                 ui.onCancel(function() {
                     ui.close();
                     bu.stop();
@@ -903,7 +1005,7 @@ define([
         cb(content);
     };
     makeBlock('trim-history', function(cb, $div) {
-        if (!common.isLoggedIn()) { return; }
+        if (!common.isLoggedIn()) { return void cb(false); }
         redrawTrimHistory(cb, $div);
     }, true);
 

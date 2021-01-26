@@ -1,8 +1,12 @@
 define(['/api/config'], function (ApiConfig) {
     var Module = {};
 
-    var DEFAULT_MAIN = '/customize/main-favicon.png?' + ApiConfig.requireConf.urlArgs;
-    var DEFAULT_ALT = '/customize/alt-favicon.png?' + ApiConfig.requireConf.urlArgs;
+    var apps = ['code', 'slide', 'pad', 'kanban', 'whiteboard', 'sheet', 'poll', 'teams'];
+    var app = window.location.pathname.slice(1, -1); // remove "/" at the beginnin and the end
+    var suffix = apps.indexOf(app) !== -1 ? '-'+app : '';
+
+    var DEFAULT_MAIN = '/customize/favicon/main-favicon' + suffix + '.png?' + ApiConfig.requireConf.urlArgs;
+    var DEFAULT_ALT = '/customize/favicon/alt-favicon' + suffix + '.png?' + ApiConfig.requireConf.urlArgs;
 
     var document = window.document;
 
@@ -16,6 +20,8 @@ define(['/api/config'], function (ApiConfig) {
 
     var getPermission = Module.getPermission = function (f) {
         f = f || function () {};
+        // "Notification.requestPermission is not a function" on Firefox 68.11.0esr
+        if (!Notification || typeof(Notification.requestPermission) !== 'function') { return void f(false); }
         Notification.requestPermission(function (permission) {
             if (permission === "granted") { f(true); }
             else { f(false); }

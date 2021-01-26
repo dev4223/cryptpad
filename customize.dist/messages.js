@@ -26,7 +26,9 @@ var getStoredLanguage = function () { return localStorage && localStorage.getIte
 var getBrowserLanguage = function () { return navigator.language || navigator.userLanguage || ''; };
 var getLanguage = messages._getLanguage = function () {
     if (window.cryptpadLanguage) { return window.cryptpadLanguage; }
-    if (getStoredLanguage()) { return getStoredLanguage(); }
+    try {
+        if (getStoredLanguage()) { return getStoredLanguage(); }
+    } catch (e) { console.log(e); }
     var l = getBrowserLanguage();
     // Edge returns 'fr-FR' --> transform it to 'fr' and check again
     return map[l] ? l :
@@ -52,13 +54,12 @@ require.config({
 });
 
 var req = [
-    '/common/common-util.js',
     '/customize/application_config.js',
     '/customize/translations/messages.js'
 ];
 if (language && map[language]) { req.push('/customize/translations/messages.' + language + '.js'); }
 
-define(req, function(Util, AppConfig, Default, Language) {
+define(req, function(AppConfig, Default, Language) {
     map.en = 'English';
     var defaultLanguage = 'en';
 
@@ -66,7 +67,9 @@ define(req, function(Util, AppConfig, Default, Language) {
         if (AppConfig.availableLanguages.indexOf(language) === -1) {
             language = defaultLanguage;
             Language = Default;
-            localStorage.setItem(LS_LANG, language);
+            try {
+                localStorage.setItem(LS_LANG, language);
+            } catch (e) { console.log(e); }
         }
         Object.keys(map).forEach(function (l) {
             if (l === defaultLanguage) { return; }
@@ -78,13 +81,13 @@ define(req, function(Util, AppConfig, Default, Language) {
 
     var extend = function (a, b) {
         for (var k in b) {
-            if (Util.isObject(b[k])) {
-                a[k] = Util.isObject(a[k]) ? a[k] : {};
-                extend(a[k], b[k]);
-                continue;
-            }
             if (Array.isArray(b[k])) {
                 a[k] = b[k].slice();
+                continue;
+            }
+            if (b[k] && typeof(b[k]) === "object") {
+                a[k] = (a[k] && typeof(a[k]) === "object" && !Array.isArray(a[k])) ? a[k] : {};
+                extend(a[k], b[k]);
                 continue;
             }
             a[k] = b[k] || a[k];

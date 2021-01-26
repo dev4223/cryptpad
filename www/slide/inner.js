@@ -15,6 +15,7 @@ define([
 
     'css!/bower_components/bootstrap/dist/css/bootstrap.min.css',
     'css!/bower_components/components-font-awesome/css/font-awesome.min.css',
+    'css!/customize/src/print-landscape.css',
     'less!/slide/app-slide.less',
 
     'css!cm/lib/codemirror.css',
@@ -356,9 +357,10 @@ define([
         };
         var updateLocalColors = function (text, back) {
             updateColors(text, back);
-            var metadata = JSON.parse(JSON.stringify(metadataMgr.getMetadata()));
+            var metadata = JSON.parse(JSON.stringify(metadataMgr.getMetadataLazy()));
             if (backColor) { metadata.backColor = backColor; }
             if (textColor) { metadata.color = textColor; }
+            if (!metadata.title) { metadata.title = metadata.defaultTitle; }
             metadataMgr.updateMetadata(metadata);
             framework.localChange();
         };
@@ -526,8 +528,6 @@ define([
 
             if (newPad) {
                 colors.updateLocalColors('#000', '#FFF');
-            } else {
-                colors.updateLocalColors('#FFF', '#000');
             }
 
             CodeMirror.setMode('markdown', function () { });
