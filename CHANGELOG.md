@@ -1,3 +1,129 @@
+# 4.2.1
+
+This minor release addresses a few bugs discovered after deploying 4.2.0:
+
+* The 4.2.0 release included major improvements to the sheet application. This introduced breaking changes to the "lock" system in the application. Existing spreadsheets (before 4.2.0) that were closed by a user without "unlocking" all cells first became impossible to open after the 4.2.0 changes. This has been fixed.
+* Team owners can now properly upload a team avatar.
+* We've improved the file upload script to better recognize markdown files.
+* We've fixed a few issues resulting in an error screen:
+  * New users were unable to create a drive without registering first.
+  * Snapshots in the sheet application couldn't be loaded.
+  * Loading an existing drive as an unregistered user could fail.
+
+# 4.2.0 (C)
+
+## Goals
+
+We've made a lot of big changes to the platform lately. This release has largely been an attempt to stabilize the codebase by fixing bugs and merging features that we hadn't had a chance to test until now, all while updating our documentation and removing unused or outdated code.
+
+## Update notes
+
+This release includes an update to the sheet editor which is not backwards-compatible. Clients running the new version will not be able to correctly communicate with clients running older versions. Clients will automatically detect that a new version is available upon reconnecting to the server after a restart, so as long as you follow the steps recommended below this should be fine.
+
+We've also updated a server-side dependency that is not backwards-compatible. Failure to update both the platform and its dependencies together will result in errors.
+
+The `scripts` directory now includes a script to identify unused translations. We used this to reduce the size of our localization files (`cryptpad/www/common/translations/*.json`). We reviewed the changes carefully and did our best to test, but it's always possible that a string was erroneously removed. If you notice any bugs in the UI where text seems to be missing, please let us (the developers) know via a GitHub issue.
+
+CryptPad.fr now stores more than a terabyte of data, making it quite intensive to run the scripts to remove inactive files from the disk. To help alleviate this strain we've moved the code responsible for deleting files that have been archived for longer than the configured retention period into its own script (`./scripts/evict-archived.js`). For the moment this script is not integrated into the server and will not automatically run in the background as the main eviction script does. It's recommended that you run it manually if you find you are low on disk space.
+
+Since early in the pandemic we've been serving a custom home page on CryptPad.fr to inform users that we've increased the amount of storage provided for free. This was originally intended as a temporary measure, but since almost a year has passed we figured it was about time we integrate this custom code into the platform itself. Admins can now add a custom note to the home page, using customized HTML in `customize/application_config.js`. To do this, define an `AppConfig.homeNotice` attribute like so: `AppConfig.homeNotice = "<b>pewpew</b>";`.
+
+To update from 4.1.0 to 4.2.0:
+
+1. Stop your server
+2. Get the latest code from the 4.2.0 tag (`git fetch origin && git checkout 4.2.0`, or just `git pull origin main`)
+3. Install the latest dependencies with `bower update` and `npm i`
+4. Restart your server
+
+## Features
+
+* The "What is CryptPad" page now links to our sponsors websites instead of just mentioning them by name.
+* We've updated the colors for the contacts app and the chat integrated into documents and teams to fit better with our other styles.
+* We've reverted the styles for the rich text editor so that the document always has a white background, even in dark mode, since we could not guarantee that documents would be legible to all users if custom text colors had been applied. While we were looking at this editor, we also repositioned several buttons used to control the page's layout, including the width of the document, the presence of the table of contents, and its comments.
+* We've continued to improve several key parts of the platform to accommodate offline usage. Teams, shared folders within teams, and the file app can now load and display content cached within the browser even if the client cannot establish a connection to our API server.
+* The content of _whiteboard_ documents can now be downloaded directly from within team or user drives, rather than exclusively from within the whiteboard editor itself. To do so, right-click a whiteboard and choose _download_ to export a PNG file.
+* Since we now regularly serve more than 125 thousand visitors a week it's gotten quite difficult to keep up with support tickets. To help alleviate this burden we're taking steps to increase the visibility of our documentation (https://docs.cryptpad.fr). The support ticket page now displays a link to that documentation above the form to create a new ticket.
+* Several users have reported confusion regarding various password fields in CryptPad, in the access menu, pad creation screen, when uploading new files, and when creating a shared folder. We've updated the text associated with these fields to better indicate that they are not requesting your user password, but rather that they allow you to add an optional password as an additional layer of protection.
+* Server administrators can now refresh the _performance_ table on the admin panel without reloading the page.
+* We've begun working on a _checkup_ page for CryptPad to help administrators identify and fix common misconfigurations of the platform. It's still in a very basic state, but we hope to to make it a core part of the server installation guide that is under development.
+* The kanban app now supports import like the rest of our apps and rejects content of any file-type other than JSON.
+* We've dropped support for a very old migration that handled user accounts that had not been accessed fo several years. This should make everyone else's account slightly faster.
+
+## Bug fixes
+
+* We've fixed a long list of minor stylistic inconsistencies following last release's introduction of dark mode:
+  * Text embedded in documents via media-tags now features the same background and text color as is applied to similar preformatted code blocks in markdown.
+  * The arrow portion of our tooltips had inherited an inconsistent background color from a parent element. It now uses the same color as the body of the tooltip.
+  * Our 404 page now correctly uses the theme's background color.
+  * We removed a number of unused color variables from our style sheets.
+  * The most recent user message of any thread on the admin panel's view of support tickets is no longer red. Since we now categorize messages according to their answered status and priority, this indicator was no longer necessary.
+  * We fixed some contrast issues on for pages with sidebars (settings, teams, admin, etc.) when hovering over items in the sidebar.
+  * Various items in the drive and pad type selection menu also had contrast issues when hovering over options.
+  * Links in the drive's info boxes and in the admin panel are now correctly styled with the same color as links throughout the rest of the platform.
+  * Race conditions between conflicting styles for autocomplete dropdowns caused them to be displayed behind other elements under certain circumstances.
+  * The "bell" icon which we use for the notifications menu in the toolbar now uses the same color as documents' titles, rather than the color of the editor's toolbar.
+  * Items in the filepicker modal which is opened by various apps' "Insert" menu now have a lighter grey background instead of the almost-black color applied in 4.1.0.
+  * The storage limit indicator shown in the bottom-left corner of user and team drives no longer has round corners.
+* An insufficiently specific CSS selector caused the "spinner" animation to persist in the chat interface after it should have been hidden.
+* The client will now check whether a file is larger than is allowed by the server before attempting to upload it, rather failing only when the server rejects the upload.
+* The drive no longer allows files to be dragged and dropped into locations other than the "Documents" section, as it did not make sense for files to be displayed anywhere else.
+* We identified and fixed a number of issues which caused shared folders that were protected with access lists to fail to load due to race conditions between loading the document and authenticating with the server as a user or member of a team. This could also result in a loss of access to documents stored exclusively in those shared folders.
+* There was a similar race condition that could occur when registering an account that could cause some parts of the UI to get stuck offline.
+* We've fixed a number of server issues:
+  1. A change in a function signature in late December caused the upload of unowned files to fail to complete.
+  2. Messages sent via websocket are no longer broadcast to other members of a session until they have been validated by the server and stored on the disk. This was not a security issue as clients validate messages anyway, however, it could cause inconsistencies in documents when some members of a session incorrectly believed that a message had been saved.
+  3. A subtle race condition in very specific circumstances could cause the server's in-memory index for a given session to become incorrect. This could cause one or two messages to be omitted when requesting the most recent history. We observed this in practice when some clients did not realize they had been kicked from a team. This is unlikely to have affected anyone in practice because it only occurred when reconnecting using cached messages for the document which records team membership, and this functionality is only being introduced in this release.
+  4. Several HTTP headers were set by both our example NGINX configuration and the NodeJS server which is proxied by NGINX for a particular resource. The duplication of certain headers caused unexpected behaviour in Chrome-based browsers, so we've updated the Node process to avoid conflicting.
+* We spent a lot of time improving our integration of OnlyOffice's sheet editor:
+  * The editor is now initialized with your CryptPad account's preferred language.
+  * We realized that our peer-to-peer locking system (which replaces the server-based system provided by OnlyOffice's document server) did not correctly handle multiple locks per user. This caused errors when filtering and sorting columns. We've improved our locking system so these features should now work as expected, but old clients will not understand the new format. As mentioned in the "Update notes" section, admins must follow the recommended update steps to ensure that all clients correctly update to the latest version.
+  * We've removed a restriction we imposed to ensure all users editing a sheet were using OnlyOffice's "fast mode", since we now support the alternative "strict mode". In strict mode, changes you make to the document are not sent until you choose to save (using a button or by pressing ctrl+s). This introduces some additional complexity into our integration, however, it enables support for undoing local changes as per [issue #195](https://github.com/xwiki-labs/cryptpad/issues/195).
+
+# 4.1.0 (B)
+
+## Goals
+
+Our recent 4.0.0 release introduced major changes to CryptPad's style-sheets which likely caused some difficulty for admins who'd made extensive changes to their instance's appearance. We figure it's best to make more changes now instead of making small breaking changes more frequently, so we decided now is a good time to refactor a lot of our styles to implement an often-requested dark mode in CryptPad.
+
+## Update notes
+
+As noted above, this release introduces some major changes to CryptPad styles. If you have customized the look of your instance we recommend testing this new version locally before deploying it to your server to ensure that there are no critical conflicts.
+
+Otherwise, to update from 4.0.0 to 4.1.0:
+
+1. Stop your server
+2. Get the latest code from the 4.1.0 tag (`git fetch origin && git checkout 4.1.0`, or just `git pull origin main`)
+3. Install the latest dependencies with `bower update` and `npm i`
+4. Restart your server
+
+## Features
+
+* The new dark theme will be applied if CryptPad detects that your OS or browser are configured to prefer dark modes, otherwise you can choose to enable the dark mode on a per-device basis via the _Appearance_ tab of the settings page. Aside from general tweaks for common stylistic elements like the toolbar and loading screen, we made many app-specific changes:
+  * Markdown-based slide colors are initialized to match the theme of their creator.
+  * Freshly-opened whiteboards are initialized with _white_ preselected instead of _black_ if you are using dark mode.
+  * Markdown-extensions, like mermaid, markmap, and mathjax required additional effort to match users themes.
+  * The rich-text editor is somewhat challenging, like the whiteboard, because users can choose to use text colors that may not contrast well against the background, and users may not all see the same thing. The default text color will always contrast with the theme background. Manually set light/dark colors may render the text unreadable for users using another theme.
+* We made some UI updates to offer an increased ability to hide features that can take up too much of the available screen space. In particular, rich-text editors can choose to hide comments and the table of contents. Document owners can use the new _Document settings_ menu (available from the _File_ dropdown) to suggest settings for the current document, such that new users can view the document in its intended configuration unless they have set their own preferences.
+* We've made some performance optimizations in a few key places on the client:
+  * Large, complex kanbans tended to slow down quite a bit when multiple people were editing or moving cards at once. Boards are now only applied one second after the most recent change (unless updates have not been displayed for more than five seconds).
+  * The drive's search functionality is similarly throttled to prevent multiple concurrent searches from being executed in parallel.
+* Updates to the whiteboard include the undo/redo functionality via _fabric-history.js_, and the ability to add text to drawings.
+* The _teams-picker_ page has been redesigned to use a card-based interface so that clicking anywhere on a team's card opens its drive, rather than just a single "open" button.
+* We've added a number of new features to the admin panel:
+  * The _Statistics_ tab now features a button to load the latest stats from the server instead of requiring a page reload to see the latest numbers.
+  * There is a new _Performance_ tab which includes a table of the time spent executing various server functions. We're using this data to prioritize optimizations to decrease resource consumption and increase the number of users one instance can support.
+  * We've added a _Check account storage_ section on the _User storage_ tab to allow admins to check how much of their quota any particular user has consumed, however, it seems to return incorrect results some of the time, so you can consider it experimental for now.
+
+## Bug fixes
+
+* The recent updates to display recent versions of user data from a local cache before the latest content had been synchronized introduced a few minor issues which have been addressed:
+  * The user menu (in the top-right corner) incorrectly linked to a _donate link_ instead of a link to their subscription page because their first attempt to check their quota failed.
+  * The usage bar in the drive, teams, and settings pages only appeared after some time because it is scheduled to update every thirty seconds, and the first attempt failed while it was still connecting. We now update retry more eagerly until a connection is established.
+* We've fixed a few links to our documentation which incorrectly concatenated two URLs together.
+* Users that had added the same document template to their own drive as well as a team's drive could see two instances of it suggested on the pad creation screen. We now deduplicate this list such that only one copy is suggested for use.
+* The Kanban app now offers better touch support, as some users reported that they were unable to drag and drop cards and columns.
+* Finally, we now guard against some edge cases in the _access modal_ in which the owner of a document could send themself a request for edit rights if they loaded the document in view mode after deleting it from their drive.
+
 # 4.0.0 (A)
 
 We're very happy to introduce CryptPad v4.0!

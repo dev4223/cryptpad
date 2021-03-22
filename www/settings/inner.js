@@ -46,7 +46,7 @@ define([
     var sframeChan;
 
     var categories = {
-        'account': [
+        'account': [ // Msg.settings_cat_account
             'cp-settings-own-drive',
             'cp-settings-info-block',
             'cp-settings-displayname',
@@ -55,12 +55,16 @@ define([
             'cp-settings-change-password',
             'cp-settings-delete'
         ],
-        'security': [
+        'security': [ // Msg.settings_cat_security
             'cp-settings-logout-everywhere',
             'cp-settings-autostore',
             'cp-settings-safe-links',
             'cp-settings-userfeedback',
             'cp-settings-cache',
+        ],
+        'style': [ // Msg.settings_cat_style
+            'cp-settings-colortheme',
+            'cp-settings-custom-theme',
         ],
         'drive': [
             'cp-settings-resettips',
@@ -71,24 +75,24 @@ define([
             'cp-settings-trim-history'
             //'cp-settings-drive-reset'
         ],
-        'cursor': [
+        'cursor': [ // Msg.settings_cat_cursor
             'cp-settings-cursor-color',
             'cp-settings-cursor-share',
             'cp-settings-cursor-show',
         ],
-        'pad': [
+        'pad': [ // Msg.settings_cat_pad
             'cp-settings-pad-width',
             'cp-settings-pad-spellcheck',
             'cp-settings-pad-notif',
         ],
-        'code': [
+        'code': [ // Msg.settings_cat_code
             'cp-settings-code-indent-unit',
             'cp-settings-code-indent-type',
             'cp-settings-code-brackets',
             'cp-settings-code-font-size',
             'cp-settings-code-spellcheck',
         ],
-        'kanban': [
+        'kanban': [ // Msg.settings_cat_kanban
             'cp-settings-kanban-tags',
         ],
         'subscription': {
@@ -360,7 +364,7 @@ define([
         return $div;
     };
 
-    makeBlock('cache', function (cb) {
+    makeBlock('cache', function (cb) { // Msg.settings_cacheHint, .settings_cacheTitle
         var store = window.cryptpadStore;
 
         var $cbox = $(UI.createCheckbox('cp-settings-cache',
@@ -408,6 +412,63 @@ define([
         ]);
     }, true);
 
+    makeBlock('colortheme', function (cb) { // Msg.settings_colorthemeHint .settings_colorthemeTitle
+        var theme = window.cryptpadStore.store['colortheme'] || 'default';
+        var os = window.cryptpadStore.store['colortheme_default'] || 'light';
+        var values = [
+            'default', // Msg.settings_colortheme_default
+            'light', // Msg.settings_colortheme_light
+            'dark', // Msg.settings_colortheme_dark
+            /* 'custom'*/ // Msg.settings_colortheme_custom
+        ];
+
+        var defaultTheme = Messages['settings_colortheme_'+os];
+        var opts = h('div.cp-settings-radio-container', [
+            values.map(function (key) {
+                return UI.createRadio('cp-colortheme-radio', 'cp-colortheme-radio-'+key,
+                    Messages._getKey('settings_colortheme_' + key, [defaultTheme]),
+                    key === theme, {
+                        input: { value: key },
+                        label: { class: 'noTitle' }
+                    });
+            })
+        ]);
+
+        cb(opts);
+
+        var spinner = UI.makeSpinner($(opts));
+        $(opts).find('input[name="cp-colortheme-radio"]').change(function () {
+            var val = this.value;
+            if (values.indexOf(val) === -1) { return; }
+            if (val === theme) { return; }
+            spinner.spin();
+
+            // Check if we need to flush cache
+            var flush = false;
+            if (val === "default" && os === theme) {
+                // Switch from a theme to default without changing value: nothing to do
+            } else if (theme === "default" && os === val) {
+                // Switch from default to a selected value without any change: nothing to do
+            } else {
+                // The theme is different, flush cache
+                flush = true;
+            }
+
+            if (val === 'default') { val = ''; }
+            // browsers try to load iframes from cache if they have the same id as was previously seen
+            // this seems to help?
+            window.location.hash = '';
+            sframeChan.query('Q_COLORTHEME_CHANGE', {
+                theme: val,
+                flush: flush
+            }, function () {
+                window.cryptpadStore.store['colortheme'] = val;
+                theme = val || 'default';
+                spinner.done();
+            });
+        });
+    }, true);
+
     create['delete'] = function() {
         if (!common.isLoggedIn()) { return; }
         var $div = $('<div>', { 'class': 'cp-settings-delete cp-sidebarlayout-element' });
@@ -426,7 +487,7 @@ define([
         $button.click(function() {
             $spinner.show();
             UI.confirm(Messages.settings_deleteConfirm, function(yes) {
-                if (!yes) { return; }
+                if (!yes) { return void $spinner.hide(); }
                 sframeChan.query("Q_SETTINGS_DELETE_ACCOUNT", null, function(err, data) {
                     // Owned drive
                     if (data.state === true) {
@@ -547,7 +608,6 @@ define([
                 }, {
                     ok: Messages.register_writtenPassword,
                     cancel: Messages.register_cancel,
-                    cancelClass: 'btn.btn-safe',
                     okClass: 'btn.btn-danger',
                     reverseOrder: true,
                     done: function($dialog) {
@@ -571,7 +631,7 @@ define([
         return $div;
     };
 
-    makeBlock('own-drive', function(cb, $div) {
+    makeBlock('own-drive', function(cb, $div) { // Msg.settings_ownDriveHint, .settings_ownDriveTitle
         if (privateData.isDriveOwned || !common.isLoggedIn()) {
             return void cb(false);
         }
@@ -626,7 +686,7 @@ define([
         cb(form);
     }, true);
 
-    makeBlock('mediatag-size', function(cb) {
+    makeBlock('mediatag-size', function(cb) { // Msg.settings_mediatagSizeHint, .settings_mediatagSizeTitle
         var $inputBlock = $('<div>', {
             'class': 'cp-sidebarlayout-input-block',
         });
@@ -680,7 +740,7 @@ define([
 
     // Security
 
-    makeBlock('safe-links', function(cb) {
+    makeBlock('safe-links', function(cb) { // Msg.settings_safeLinksTitle
 
         var $cbox = $(UI.createCheckbox('cp-settings-safe-links',
             Messages.settings_safeLinksCheckbox,
@@ -1004,7 +1064,7 @@ define([
         $div.find('#cp-settings-trim-container').remove();
         cb(content);
     };
-    makeBlock('trim-history', function(cb, $div) {
+    makeBlock('trim-history', function(cb, $div) { // Msg.settings_trimHistoryHint, .settings_trimHistoryTitle
         if (!common.isLoggedIn()) { return void cb(false); }
         redrawTrimHistory(cb, $div);
     }, true);
@@ -1179,14 +1239,18 @@ define([
         var $ok = $('<span>', { 'class': 'fa fa-check', title: Messages.saved });
         var $spinner = $('<span>', { 'class': 'fa fa-spinner fa-pulse' });
 
+        var store = window.cryptpadStore;
+        var key = 'pad-small-width';
+        var isHidden = store.store[key] === '1';
+
         var $cbox = $(UI.createCheckbox('cp-settings-padwidth',
             Messages.settings_padWidthLabel,
-            false, { label: { class: 'noTitle' } }));
+            isHidden, { label: { class: 'noTitle' } }));
         var $checkbox = $cbox.find('input').on('change', function() {
             $spinner.show();
             $ok.hide();
             var val = $checkbox.is(':checked');
-            common.setAttribute(['pad', 'width'], val, function() {
+            store.put(key, val ? '1' : '0', function () {
                 $spinner.hide();
                 $ok.show();
             });
@@ -1196,13 +1260,6 @@ define([
         $ok.hide().appendTo($cbox);
         $spinner.hide().appendTo($cbox);
 
-
-        common.getAttribute(['pad', 'width'], function(e, val) {
-            if (e) { return void console.error(e); }
-            if (val) {
-                $checkbox.attr('checked', 'checked');
-            }
-        });
         return $div;
     };
 
@@ -1243,7 +1300,7 @@ define([
         return $div;
     };
 
-    makeBlock('pad-notif', function(cb) {
+    makeBlock('pad-notif', function(cb) { // Msg.settings_padNotifHint, .settings_padNotifTitle
         var $cbox = $(UI.createCheckbox('cp-settings-pad-notif',
             Messages.settings_padNotifCheckbox,
             false, { label: { class: 'noTitle' } }));
@@ -1435,7 +1492,7 @@ define([
     };
 
 
-    makeBlock('kanban-tags', function(cb) {
+    makeBlock('kanban-tags', function(cb) { // Msg.settings_kanbanTagsHint, .settings_kanbanTagsTitle
 
         var opt1 = UI.createRadio('cp-settings-kanban-tags', 'cp-settings-kanban-tags-and',
             Messages.settings_kanbanTagsAnd, false, {
@@ -1494,24 +1551,34 @@ define([
         });
     };
 
+    var SIDEBAR_ICONS = {
+        account: 'fa fa-user-o',
+        drive: 'fa fa-hdd-o',
+        cursor: 'fa fa-i-cursor',
+        code: 'fa fa-file-code-o',
+        pad: 'fa fa-file-word-o',
+        security: 'fa fa-lock',
+        subscription: 'fa fa-star-o',
+        kanban: 'cptools cptools-kanban',
+        style: 'cptools cptools-palette',
+    };
+
     var createLeftside = function() {
         var $categories = $('<div>', { 'class': 'cp-sidebarlayout-categories' })
             .appendTo(APP.$leftside);
         APP.$usage = $('<div>', { 'class': 'usage' }).appendTo(APP.$leftside);
         var active = privateData.category || 'account';
+        if (!categories[active]) { active = 'account'; }
         Object.keys(categories).forEach(function(key) {
             var $category = $('<div>', {
                 'class': 'cp-sidebarlayout-category',
                 'data-category': key
             }).appendTo($categories);
-            if (key === 'account') { $category.append($('<span>', { 'class': 'fa fa-user-o' })); }
-            if (key === 'drive') { $category.append($('<span>', { 'class': 'fa fa-hdd-o' })); }
-            if (key === 'cursor') { $category.append($('<span>', { 'class': 'fa fa-i-cursor' })); }
-            if (key === 'code') { $category.append($('<span>', { 'class': 'fa fa-file-code-o' })); }
-            if (key === 'pad') { $category.append($('<span>', { 'class': 'fa fa-file-word-o' })); }
-            if (key === 'security') { $category.append($('<span>', { 'class': 'fa fa-lock' })); }
-            if (key === 'subscription') { $category.append($('<span>', { 'class': 'fa fa-star-o' })); }
-            if (key === 'kanban') { $category.append($('<span>', { 'class': 'cptools cptools-kanban' })); }
+
+            var iconClass = SIDEBAR_ICONS[key];
+            if (iconClass) {
+                $category.append($('<span>', { 'class': iconClass }));
+            }
 
             if (key === active) {
                 $category.addClass('cp-leftside-active');

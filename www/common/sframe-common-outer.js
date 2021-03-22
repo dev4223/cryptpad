@@ -11,10 +11,13 @@ define([
     common.initIframe = function (waitFor, isRt, pathname) {
         var requireConfig = RequireConfig();
         var lang = Messages._languageUsed;
+        var themeKey = 'CRYPTPAD_STORE|colortheme';
         var req = {
             cfg: requireConfig,
             req: [ '/common/loading.js' ],
             pfx: window.location.origin,
+            theme: localStorage[themeKey],
+            themeOS: localStorage[themeKey+'_default'],
             lang: lang
         };
         window.rc = requireConfig;
@@ -30,9 +33,11 @@ define([
             }
         }
 
-        document.getElementById('sbox-iframe').setAttribute('src',
+
+        var $i = $('<iframe>').attr('id', 'sbox-iframe').attr('src',
             ApiConfig.httpSafeOrigin + (pathname || window.location.pathname) + 'inner.html?' +
                 requireConfig.urlArgs + '#' + encodeURIComponent(JSON.stringify(req)));
+        $('iframe-placeholder').after($i).remove();
 
         // This is a cheap trick to avoid loading sframe-channel in parallel with the
         // loading screen setup.
@@ -563,7 +568,10 @@ define([
                 var metaObj;
                 nThen(function (waitFor) {
                     Cryptpad.getMetadata(waitFor(function (err, m) {
-                        if (err) { console.log(err); }
+                        if (err) {
+                            waitFor.abort();
+                            return void console.log(err);
+                        }
                         metaObj = m;
                         edPublic = metaObj.priv.edPublic; // needed to create an owned pad
                         curvePublic = metaObj.user.curvePublic;
@@ -837,7 +845,7 @@ define([
                     var metadata = data.metadata;
                     var add = data.add;
                     var _secret = secret;
-                    if (metadata && (metadata.href || metadata.roHref)) {
+                    if (metadata && (metadata.href || metadata.roHref) && !metadata.fakeHref) {
                         var _parsed = Utils.Hash.parsePadUrl(metadata.href || metadata.roHref);
                         _secret = Utils.Hash.getSecrets(_parsed.type, _parsed.hash, metadata.password);
                     }
@@ -847,7 +855,7 @@ define([
                     var crypto = Crypto.createEncryptor(_secret.keys);
                     nThen(function (waitFor) {
                         // If we already have metadata, use it, otherwise, try to get it
-                        if (metadata) { return; }
+                        if (metadata && metadata.owners) { return; }
 
                         Cryptpad.getPadMetadata({
                             channel: secret.channel
@@ -1231,6 +1239,7 @@ define([
                             if (typeof(_msg) === "object") {
                                 decryptedMsgs.push({
                                     author: _msg.author,
+                                    serverHash: _msg.serverHash,
                                     time: _msg.time,
                                     msg: crypto.decrypt(_msg.msg, true, true)
                                 });
@@ -1726,7 +1735,7 @@ define([
                 var cpNfCfg = {
                     sframeChan: sframeChan,
                     channel: secret.channel,
-                    versionHash: parsed.hashData && parsed.hashData.versionHash,
+                    versionHash: cfg.type !== 'oo' && parsed.hashData && parsed.hashData.versionHash,
                     padRpc: Cryptpad.padRpc,
                     validateKey: secret.keys.validateKey || undefined,
                     isNewHash: isNewHash,

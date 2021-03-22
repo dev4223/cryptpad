@@ -39,10 +39,10 @@ define([
     var privateData;
 
     var categories = {
-        'tickets': [
+        'tickets': [ // Msg.support_cat_tickets
             'cp-support-list',
         ],
-        'new': [
+        'new': [ // Msg.support_cat_new
             'cp-support-language',
             'cp-support-form',
         ],
@@ -66,8 +66,13 @@ define([
 
         var $div = $('<div>', {'class': 'cp-support-' + key + ' cp-sidebarlayout-element'});
         $('<label>').text(Messages['support_'+safeKey+'Title'] || key).appendTo($div);
-        $('<span>', {'class': 'cp-sidebarlayout-description'})
-            .text(Messages['support_'+safeKey+'Hint'] || 'Coming soon...').appendTo($div);
+        var $hintSpan = $('<span>', {'class': 'cp-sidebarlayout-description'}).appendTo($div);
+        var hintContent = Messages['support_'+safeKey+'Hint'] || 'Coming soon...';
+        if (safeKey === 'form') {
+            $hintSpan.html(hintContent);
+        } else {
+            $hintSpan.text(hintContent);
+        }
         if (addButton) {
             $('<button>', {
                 'class': 'btn btn-primary'
@@ -81,7 +86,7 @@ define([
     // List existing (open?) tickets
     create['list'] = function () {
         var key = 'list';
-        var $div = makeBlock(key);
+        var $div = makeBlock(key); // Msg.support_listHint, .support_listTitle
         $div.addClass('cp-support-container');
         var hashesById = {};
 
@@ -161,7 +166,7 @@ define([
     // Create a new tickets
     create['form'] = function () {
         var key = 'form';
-        var $div = makeBlock(key, true);
+        var $div = makeBlock(key, true); // Msg.support_formHint, .support_formTitle, .support_formButton
 
         var form = APP.support.makeForm();
 
@@ -187,7 +192,7 @@ define([
     // Support is disabled...
     create['disabled'] = function () {
         var key = 'disabled';
-        var $div = makeBlock(key);
+        var $div = makeBlock(key); // Msg.support_disabledHint, .support_disabledTitle
         return $div;
     };
 

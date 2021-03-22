@@ -64,14 +64,19 @@ define([
     var CURRENT_VERSION = 'v2b';
     //var READONLY_REFRESH_TO = 15000;
 
-    var debug = function (x) {
+    var debug = function (x, type) {
         if (!window.CP_DEV_MODE) { return; }
-        console.debug(x);
+        console.debug(x, type);
     };
 
     var stringify = function (obj) {
         return JSONSortify(obj);
     };
+
+    var supportsXLSX = function () {
+        return !(typeof(Atomics) === "undefined" || typeof (SharedArrayBuffer) === "undefined");
+    };
+
 
     var toolbar;
 
@@ -207,6 +212,19 @@ define([
                 APP.onLocal();
             }
         };
+
+        // Make sure a former tab on the same worker doesn't have remaining locks
+        var checkClients = function (clients) {
+            Object.keys(content.ids).forEach(function (id) {
+                var tabId = Number(id.slice(33)); // remove the netflux ID and the "-"
+                if (clients.indexOf(tabId) === -1) {
+                    removeClient({
+                        id: tabId
+                    });
+                }
+            });
+        };
+
 
         var getFileType = function () {
             var type = common.getMetadataMgr().getPrivateData().ooType;
@@ -723,6 +741,7 @@ define([
             sframeChan.on('EV_OO_EVENT', function (obj) {
                 switch (obj.ev) {
                     case 'READY':
+                        checkClients(obj.data);
                         cb();
                         break;
                     case 'LEAVE':
@@ -812,10 +831,16 @@ define([
         };
 
         // Get all existing locks
+        var getUserLock = function (id) {
+            var l = content.locks[id] || {};
+            return Object.keys(l).map(function (uid) { return l[uid]; });
+        };
         var getLock = function () {
-            return Object.keys(content.locks).map(function (id) {
-                return content.locks[id];
+            var locks = [];
+            Object.keys(content.locks).forEach(function (id) {
+                Array.prototype.push.apply(locks, getUserLock(id));
             });
+            return locks;
         };
 
         // Update the userlist in onlyoffice
@@ -831,37 +856,38 @@ define([
         };
         // Update the locks status in onlyoffice
         var handleNewLocks = function (o, n) {
-            Object.keys(n).forEach(function (id) {
-                // New lock
-                if (!o[id]) {
-                    ooChannel.send({
-                        type: "getLock",
-                        locks: getLock()
-                    });
-                    return;
-                }
-                // Updated lock
-                if (stringify(n[id]) !== stringify(o[id])) {
-                    ooChannel.send({
-                        type: "releaseLock",
-                        locks: [o[id]]
-                    });
-                    ooChannel.send({
-                        type: "getLock",
-                        locks: getLock()
-                    });
-                }
+            var hasNew = false;
+            // Check if we have at least one new lock
+            Object.keys(n).some(function (id) {
+                if (typeof(n[id]) !== "object") { return; } // Ignore old format
+                // n[id] = { uid: lock, uid2: lock2 };
+                return Object.keys(n[id]).some(function (uid) {
+                    // New lock
+                    if (!o[id] || !o[id][uid]) {
+                        hasNew = true;
+                        return true;
+                    }
+                });
             });
+            // Remove old locks
             Object.keys(o).forEach(function (id) {
-                // Removed lock
-                if (!n[id]) {
-                    ooChannel.send({
-                        type: "releaseLock",
-                        locks: [o[id]]
-                    });
-                    return;
-                }
+                if (typeof(o[id]) !== "object") { return; } // Ignore old format
+                Object.keys(o[id]).forEach(function (uid) {
+                    // Removed lock
+                    if (!n[id] || !n[id][uid]) {
+                        ooChannel.send({
+                            type: "releaseLock",
+                            locks: [o[id][uid]]
+                        });
+                    }
+                });
             });
+            if (hasNew) {
+                ooChannel.send({
+                    type: "getLock",
+                    locks: getLock()
+                });
+            }
         };
 
         // Remove locks from offline users
@@ -871,9 +897,11 @@ define([
             Object.keys(locks).forEach(function (id) {
                 var nId = id.slice(0,32);
                 if (users.indexOf(nId) === -1) {
+                    // Offline locks: support old format
+                    var l = (locks[id] && !locks[id].block) ? getUserLock(id) : [locks[id]];
                     ooChannel.send({
                         type: "releaseLock",
-                        locks: [locks[id]]
+                        locks: l
                     });
                     delete content.locks[id];
                 }
@@ -927,6 +955,8 @@ define([
                 data: {"type":"open","status":"ok","data":{"Editor.bin":obj.openCmd.url}}
             });
 
+            /*
+            // TODO: make sure we don't have new popups that can break our integration
             var observer = new MutationObserver(function(mutations) {
                 mutations.forEach(function(mutation) {
                     if (mutation.type === "childList") {
@@ -942,6 +972,7 @@ define([
             observer.observe(window.frames[0].document.body, {
                 childList: true,
             });
+            */
         };
 
         var handleLock = function (obj, send) {
@@ -964,12 +995,20 @@ define([
                 block: obj.block && obj.block[0],
             };
             var myId = getId();
-            content.locks[myId] = msg;
+            content.locks[myId] = content.locks[myId] || {};
+            var uid = Util.uid();
+            content.locks[myId][uid] = msg;
             oldLocks = JSON.parse(JSON.stringify(content.locks));
             // Remove old locks
             deleteOfflineLocks();
             // Prepare callback
             if (cpNfInner) {
+                var waitLock = APP.waitLock = Util.mkEvent(true);
+                setTimeout(function () {
+                    // Make sure the waitLock is never stuck
+                    waitLock.fire();
+                    if (waitLock === APP.waitLock) { delete APP.waitLock; }
+                }, 5000);
                 var onPatchSent = function (again) {
                     if (!again) { cpNfInner.offPatchSent(onPatchSent); }
                     // Answer to our onlyoffice
@@ -985,6 +1024,8 @@ define([
                             type: "getLock",
                             locks: getLock()
                         });
+                        waitLock.fire();
+                        if (waitLock === APP.waitLock) { delete APP.waitLock; }
                     } else {
                         if (!isLockedModal.modal) {
                             isLockedModal.modal = UI.openCustomModal(isLockedModal.content);
@@ -1047,7 +1088,7 @@ define([
                 type: "saveChanges",
                 changes: parseChanges(obj.changes),
                 changesIndex: ooChannel.cpIndex || 0,
-                locks: [content.locks[getId()]],
+                locks: getUserLock(getId()),
                 excelAdditionalInfo: null
             }, null, function (err, hash) {
                 if (err) {
@@ -1072,7 +1113,7 @@ define([
                 ooChannel.lastHash = hash;
                 // Check if a checkpoint is needed
                 makeCheckpoint();
-                // Remove my lock
+                // Remove my locks
                 delete content.locks[getId()];
                 oldLocks = JSON.parse(JSON.stringify(content.locks));
                 APP.onLocal();
@@ -1093,13 +1134,14 @@ define([
             Channel.create(msgEv, postMsg, function (chan) {
                 APP.chan = chan;
 
-                var send = ooChannel.send = function (obj) {
-                    debug(obj);
+                var send = ooChannel.send = function (obj, force) {
+                    if (APP.onStrictSaveChanges && !force) { return; } // can't push to OO before reloading cp
+                    debug(obj, 'toOO');
                     chan.event('CMD', obj);
                 };
 
                 chan.on('CMD', function (obj) {
-                    debug(obj);
+                    debug(obj, 'fromOO');
                     switch (obj.type) {
                         case "auth":
                             handleAuth(obj, send);
@@ -1107,10 +1149,19 @@ define([
                         case "isSaveLock":
                             // TODO ping the server to check if we're online first?
                             if (!offline) {
-                                send({
-                                    type: "saveLock",
-                                    saveLock: false
-                                });
+                                if (APP.waitLock) {
+                                    APP.waitLock.reg(function () {
+                                        send({
+                                            type: "saveLock",
+                                            saveLock: false
+                                        }, true);
+                                    });
+                                } else {
+                                    send({
+                                        type: "saveLock",
+                                        saveLock: false
+                                    }, true);
+                                }
                             }
                             break;
                         case "getLock":
@@ -1121,6 +1172,18 @@ define([
                             send({ type: "message" });
                             break;
                         case "saveChanges":
+                            // If we have unsaved data before reloading for a checkpoint...
+                            if (APP.onStrictSaveChanges) {
+                                APP.unsavedChanges = {
+                                    type: "saveChanges",
+                                    changes: parseChanges(obj.changes),
+                                    changesIndex: ooChannel.cpIndex || 0,
+                                    locks: getUserLock(getId()),
+                                    excelAdditionalInfo: null
+                                };
+                                APP.onStrictSaveChanges();
+                                return;
+                            }
                             // We're sending our changes to netflux
                             handleChanges(obj, send);
                             // If we're alone, clean up the medias
@@ -1144,7 +1207,7 @@ define([
                             if (obj.releaseLocks && content.locks && content.locks[getId()]) {
                                 send({
                                     type: "releaseLock",
-                                    locks: [content.locks[getId()]]
+                                    locks: getUserLock(getId())
                                 });
                                 delete content.locks[getId()];
                                 APP.onLocal();
@@ -1198,9 +1261,10 @@ define([
                     "user": {
                         "id": String(myOOId), //"c0c3bf82-20d7-4663-bf6d-7fa39c598b1d",
                         "firstname": metadataMgr.getUserData().name || Messages.anonymous,
+                        "name": metadataMgr.getUserData().name || Messages.anonymous,
                     },
                     "mode": "edit",
-                    "lang": (navigator.language || navigator.userLanguage || '').slice(0,2)
+                    "lang": (window.cryptpadLanguage || navigator.language || navigator.userLanguage || '').slice(0,2)
                 },
                 "events": {
                     "onAppReady": function(/*evt*/) {
@@ -1208,27 +1272,29 @@ define([
                         $iframe.prop('tabindex', '-1');
                         var $tb = $iframe.find('head');
                         var css = // Old OO
-                                  '#id-toolbar-full .toolbar-group:nth-child(2), #id-toolbar-full .separator:nth-child(3) { display: none; }' +
-                                  '#fm-btn-save { display: none !important; }' +
+                                  //'#id-toolbar-full .toolbar-group:nth-child(2), #id-toolbar-full .separator:nth-child(3) { display: none; }' +
+                                  //'#fm-btn-save { display: none !important; }' +
                                   '#panel-settings-general tr.autosave { display: none !important; }' +
                                   '#panel-settings-general tr.coauth { display: none !important; }' +
-                                  '#header { display: none !important; }' +
+                                  //'#header { display: none !important; }' +
                                   '#title-doc-name { display: none !important; }' +
+                                  '#title-user-name { display: none !important; }' +
+           (supportsXLSX() ? '' : '#slot-btn-dt-print { display: none !important; }') +
                                   // New OO:
                                   '#asc-gen566 { display: none !important; }' + // Insert image from url
                                   'section[data-tab="ins"] .separator:nth-last-child(2) { display: none !important; }' + // separator
                                   '#slot-btn-insequation { display: none !important; }' + // Insert equation
-                                  '.toolbar .tabs .ribtab:not(.canedit) { display: none !important; }' + // Switch collaborative mode
-                                  '#app-title { display: none !important; }' + // OnlyOffice logo + doc title
+                                  //'.toolbar .tabs .ribtab:not(.canedit) { display: none !important; }' + // Switch collaborative mode
                                   '#fm-btn-info { display: none !important; }' + // Author name, doc title, etc. in "File" (menu entry)
                                   '#panel-info { display: none !important; }' + // Same but content
                                   '#image-button-from-url { display: none !important; }' + // Inline image settings: replace with url
                                   '#file-menu-panel .devider { display: none !important; }' + // separator in the "File" menu
-                                  '#file-menu-panel { top: 28px !important; }' + // Position of the "File" menu
                                   '#left-btn-spellcheck, #left-btn-about { display: none !important; }'+
                                   'div.btn-users.dropdown-toggle { display: none; !important }';
                         if (readOnly) {
                             css += '#toolbar { display: none !important; }';
+                            //css += '#app-title { display: none !important; }'; // OnlyOffice logo + doc title
+                            //css += '#file-menu-panel { top: 28px !important; }'; // Position of the "File" menu
                         }
                         $('<style>').text(css).appendTo($tb);
                         setTimeout(function () {
@@ -1305,7 +1371,23 @@ define([
                             } catch (e) {}
                         } else {
                             setEditable(true);
+                            deleteOfflineLocks();
+                            handleNewLocks({}, content.locks);
+                            if (APP.unsavedChanges) {
+                                var unsaved = APP.unsavedChanges;
+                                delete APP.unsavedChanges;
+                                rtChannel.sendMsg(unsaved, null, function (err, hash) {
+                                    if (err) { return void UI.alert(Messages.oo_lostEdits); }
+                                    // This is supposed to be a "send" function to tell our OO
+                                    // to unlock the cell. We use this to know that the patch was
+                                    // correctly sent so that we can apply it to our OO too.
+                                    ooChannel.send(unsaved);
+                                    ooChannel.cpIndex++;
+                                    ooChannel.lastHash = hash;
+                                });
+                            }
                         }
+
 
                         if (isLockedModal.modal && force) {
                             isLockedModal.modal.closeModal();
@@ -1346,13 +1428,16 @@ define([
                     }
                 }
             };
+            /*
+            // NOTE: Make sure it won't break anaything new (Firefox setTimeout bug)
             window.onbeforeunload = function () {
                 var ifr = document.getElementsByTagName('iframe')[0];
                 if (ifr) { ifr.remove(); }
             };
+            */
 
             APP.UploadImageFiles = function (files, type, id, jwt, cb) {
-                cb('NO');
+                return void cb();
             };
             APP.AddImage = function(cb1, cb2) {
                 APP.AddImageSuccessCallback = cb1;
@@ -1690,10 +1775,6 @@ define([
             });
         };
 
-        var supportsXLSX = function () {
-            return !(typeof(Atomics) === "undefined" || typeof (SharedArrayBuffer) === "undefined");
-        };
-
         var exportXLSXFile = function() {
             var text = getContent();
             var suggestion = Title.suggestTitle(Title.defaultTitle);
@@ -1980,6 +2061,28 @@ define([
                 }).filter(Boolean);
                 sframeChan.query('EV_OO_PIN_IMAGES', toPin);
             }
+        };
+
+        var setStrictEditing = function () {
+            if (APP.isFast) { return; }
+            var editor = getEditor();
+            var editing = editor.asc_isDocumentModified();
+            if (editing) {
+                evOnPatch.fire();
+            } else {
+                evOnSync.fire();
+            }
+        };
+        APP.onFastChange = function (isFast) {
+            APP.isFast = isFast;
+            if (isFast) {
+                if (APP.hasChangedInterval) {
+                    window.clearInterval(APP.hasChangedInterval);
+                }
+                return;
+            }
+            setStrictEditing();
+            APP.hasChangedInterval = window.setInterval(setStrictEditing, 500);
         };
 
         APP.getContent = function () { return content; };
@@ -2456,19 +2559,32 @@ define([
                 checkCheckpoint();
             }
 
+            var editor = getEditor();
             if (content.hashes) {
                 var latest = getLastCp(true);
                 var newLatest = getLastCp();
-                if (newLatest.index > latest.index) {
+                if (newLatest.index > latest.index || (newLatest.index && !latest.index)) {
                     ooChannel.queue = [];
                     ooChannel.ready = false;
-                    // New checkpoint
-                    sframeChan.query('Q_OO_SAVE', {
-                        hash: newLatest.hash,
-                        url: newLatest.file
-                    }, function () {
-                        checkNewCheckpoint();
-                    });
+                    var reload = function () {
+                        // New checkpoint
+                        sframeChan.query('Q_OO_SAVE', {
+                            hash: newLatest.hash,
+                            url: newLatest.file
+                        }, function () {
+                            checkNewCheckpoint();
+                        });
+                    };
+                    if (editor.asc_isDocumentModified()) {
+                        setEditable(false);
+                        APP.onStrictSaveChanges = function () {
+                            reload();
+                            delete APP.onStrictSaveChanges;
+                        };
+                        editor.asc_Save();
+                    } else {
+                        reload();
+                    }
                 }
                 oldHashes = JSON.parse(JSON.stringify(content.hashes));
             }
