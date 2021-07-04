@@ -30,10 +30,6 @@ define([
     'css!/bower_components/codemirror/lib/codemirror.css',
     'css!/bower_components/codemirror/addon/dialog/dialog.css',
     'css!/bower_components/codemirror/addon/fold/foldgutter.css',
-
-
-
-    'css!/kanban/jkanban.css',
     'less!/kanban/app-kanban.less'
 ], function (
     $,
@@ -245,7 +241,12 @@ define([
             e.stopPropagation();
         });
         var common = framework._.sfCommon;
-        var markdownTb = common.createMarkdownToolbar(editor);
+        var markdownTb = common.createMarkdownToolbar(editor, {
+            embed: function (mt) {
+                editor.focus();
+                editor.replaceSelection($(mt)[0].outerHTML);
+            }
+        });
         $(text).before(markdownTb.toolbar);
         $(markdownTb.toolbar).show();
         editor.refresh();
@@ -1247,6 +1248,16 @@ define([
         });
         framework.onCursorUpdate(function (data) {
             if (!data) { return; }
+            if (data.reset) {
+                Object.keys(remoteCursors).forEach(function (id) {
+                    if (remoteCursors[id].clear) {
+                        remoteCursors[id].clear();
+                    }
+                    delete remoteCursors[id];
+                });
+                return;
+            }
+
             var id = data.id;
 
             // Clear existing cursor

@@ -73,6 +73,8 @@ define([
         else {
             editor.setSelection(posToCursor(selects[0], remoteDoc), posToCursor(selects[1], remoteDoc));
         }
+
+        editor.scrollTo(scroll.left, scroll.top);
     };
 
     module.handleImagePaste = function (editor) {
@@ -530,6 +532,9 @@ define([
             }
         };
         exp.setRemoteCursor = function (data) {
+            if (data.reset) {
+                return void exp.removeCursors();
+            }
             if (data.leave) {
                 $('.cp-codemirror-cursor[id^='+data.id+']').each(function (i, el) {
                     var id = $(el).attr('id');

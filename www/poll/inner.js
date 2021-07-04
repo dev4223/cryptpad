@@ -1166,6 +1166,7 @@ define([
         var $drawer = APP.toolbar.$drawer;
 
         metadataMgr.onChange(function () {
+            if (!APP.proxy) { return; }
             var md = copyObject(metadataMgr.getMetadata());
             APP.proxy.metadata = md;
         });
@@ -1173,6 +1174,9 @@ define([
             var meta = JSON.parse(JSON.stringify(APP.proxy.metadata));
             metadataMgr.updateMetadata(meta);
         });
+
+        var $store = common.createButton('storeindrive', true);
+        $drawer.append($store);
 
         /* add a forget button */
         var forgetCb = function (err) {
@@ -1313,6 +1317,7 @@ define([
         }).nThen(function (/* waitFor */) {
             Test.registerInner(common.getSframeChannel());
             var metadataMgr = common.getMetadataMgr();
+            metadataMgr.setDegraded(false); // FIXME degarded mode unsupported (no cursor channel)
 
             APP.locked = APP.readOnly = metadataMgr.getPrivateData().readOnly;
             APP.loggedIn = common.isLoggedIn();
@@ -1364,23 +1369,23 @@ define([
                 $('#cp-app-poll-comments-add-title').remove();
             }
 
-            var rt = APP.rt = Listmap.create(listmapConfig);
-            APP.proxy = rt.proxy;
+            common.getPadAttribute('userid', function (e, userid) {
+            if (e) { console.error(e); }
+                var rt = APP.rt = Listmap.create(listmapConfig);
+                APP.proxy = rt.proxy;
 
-            var firstConnection = true;
-            rt.proxy.on('create', onCreate)
-                 .on('ready', function (info) {
-                    if (!firstConnection) { return; } // TODO fix this issue in listmap
-                    firstConnection = false;
-                    common.getPadAttribute('userid', function (e, userid) {
-                        if (e) { console.error(e); }
+                var firstConnection = true;
+                rt.proxy.on('create', onCreate)
+                    .on('ready', function (info) {
+                        if (!firstConnection) { return; } // TODO fix this issue in listmap
+                        firstConnection = false;
                         APP.userid = userid;
                         onReady(info, userid);
-                    });
-                 })
-                 .on('disconnect', onDisconnect)
-                 .on('reconnect', onReconnect)
-                 .on('error', onError);
+                    })
+                .on('disconnect', onDisconnect)
+                .on('reconnect', onReconnect)
+                .on('error', onError);
+            });
         });
     };
     main();
