@@ -20,7 +20,7 @@ define([
     // This file is loaded by sframe-common so the following config is used in all the inner apps
     if (MediaTag) {
         MediaTag.setDefaultConfig('pdf', {
-            viewer: '/common/pdfjs/web/viewer.html'
+            viewer: '/lib/pdfjs/web/viewer.html'
         });
         MediaTag.setDefaultConfig('download', {
             text: Messages.mediatag_saveButton,
@@ -127,9 +127,8 @@ define([
                 if (e || !data) { return void displayDefault(); }
                 if (typeof data !== "number") { return void displayDefault(); }
                 if (Util.bytesToMegabytes(data) > 0.5) { return void displayDefault(); }
-                var $img = $('<media-tag>').appendTo($container);
-                $img.attr('src', src);
-                $img.attr('data-crypto-key', 'cryptpad:' + cryptKey);
+                var mt = UI.mediaTag(src, cryptKey);
+                var $img = $(mt).appendTo($container);
                 MT.displayMediatagImage(common, $img, function (err, $image) {
                     if (err) { return void console.error(err); }
                     centerImage($img, $image);

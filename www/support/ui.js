@@ -31,9 +31,7 @@ define([
 
         if (typeof(ctx.pinUsage) === 'object') {
             // pass pin.usage, pin.limit, and pin.plan if supplied
-            Object.keys(ctx.pinUsage).forEach(function (k) {
-                data.sender[k] = ctx.pinUsage[k];
-            });
+            data.sender.quota = ctx.pinUsage;
         }
 
         data.id = id;
@@ -41,15 +39,22 @@ define([
 
         var teams = privateData.teams || {};
         if (!ctx.isAdmin) {
-            data.sender.userAgent = window.navigator && window.navigator.userAgent;
+            data.sender.userAgent = Util.find(window, ['navigator', 'userAgent']);
+            data.sender.vendor = Util.find(window, ['navigator', 'vendor']);
+            data.sender.appVersion = Util.find(window, ['navigator', 'appVersion']);
+            data.sender.appVersion = Util.find(window, ['screen', 'width']);
+            data.sender.appVersion = Util.find(window, ['screen', 'height']);
             data.sender.blockLocation = privateData.blockLocation || '';
             data.sender.teams = Object.keys(teams).map(function (key) {
                 var team = teams[key];
-                if (!teams) { return; }
+                if (!team) { return; }
                 var ret = {};
-                ['edPublic', 'owner', 'viewer', 'hasSecondaryKey', 'validKeys'].forEach(function (k) {
+                ['channel', 'roster', 'numberPads', 'numberSf', 'edPublic', 'curvePublic', 'owner', 'viewer', 'hasSecondaryKey', 'validKeys'].forEach(function (k) {
                     ret[k] = team[k];
                 });
+                if (ctx.teamsUsage && ctx.teamsUsage[key]) {
+                    ret.quota = ctx.teamsUsage[key];
+                }
                 return ret;
             }).filter(Boolean);
 
@@ -344,7 +349,7 @@ define([
         var senderKey = content.sender && content.sender.edPublic;
         var fromMe = senderKey === privateData.edPublic;
         var fromAdmin = ctx.adminKeys.indexOf(senderKey) !== -1;
-        var fromPremium = Boolean(content.sender.plan);
+        var fromPremium = Boolean(content.sender.plan || Util.find(content, ['sender', 'quota', 'plan']));
 
         var userData = h('div.cp-support-showdata', [
             Messages.support_showData,
@@ -430,12 +435,13 @@ define([
         ]);
     };
 
-    var create = function (common, isAdmin, pinUsage) {
+    var create = function (common, isAdmin, pinUsage, teamsUsage) {
         var ui = {};
         var ctx = {
             common: common,
             isAdmin: isAdmin,
             pinUsage: pinUsage || false,
+            teamsUsage: teamsUsage || false,
             adminKeys: Array.isArray(ApiConfig.adminKeys)?  ApiConfig.adminKeys.slice(): [],
         };
 

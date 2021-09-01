@@ -455,6 +455,32 @@ MessengerUI, Messages, Pages) {
         return $container;
     };
 
+    createCollapse = function (toolbar) {
+        var up = h('i.fa.fa-chevron-up', {title: Messages.ui_collapse});
+        var down = h('i.fa.fa-chevron-down', {title: Messages.ui_expand});
+
+        var $button = $(h('button.cp-toolbar-collapse',[
+            up,
+            down
+        ]));
+        var $up = $(up);
+        var $down = $(down);
+        toolbar.$bottomR.prepend($button);
+        $down.hide();
+        $button.click(function () {
+            toolbar.$top.toggleClass('toolbar-hidden');
+            var hidden = toolbar.$top.hasClass('toolbar-hidden');
+            $button.toggleClass('cp-toolbar-button-active');
+            if (hidden) {
+                $up.hide();
+                $down.show();
+            } else {
+                $up.show();
+                $down.hide();
+            }
+        });
+    };
+
     var initChat = function (toolbar) {
         var $container = $('<div>', {
             id: 'cp-app-contacts-container',
@@ -867,10 +893,6 @@ MessengerUI, Messages, Pages) {
             'class': "cp-toolbar-link-logo"
         }).append(UIElements.getSvgLogo());
 
-        /*.append($('<img>', {
-            //src: '/customize/images/logo_white.png?' + ApiConfig.requireConf.urlArgs
-            src: '/customize/favicon/main-favicon.png?' + ApiConfig.requireConf.urlArgs
-        }));*/
         var onClick = function (e) {
             e.preventDefault();
             if (e.ctrlKey) {
@@ -1334,6 +1356,7 @@ MessengerUI, Messages, Pages) {
         // Create the subelements
         var tb = {};
         tb['userlist'] = createUserList;
+        tb['collapse'] = createCollapse;
         tb['chat'] = createChat;
         tb['share'] = createShare;
         tb['access'] = createAccess;
@@ -1355,7 +1378,9 @@ MessengerUI, Messages, Pages) {
         tb['pad'] = function () {
             toolbar.$file.show();
             addElement([
-                'chat', 'userlist', 'title', 'useradmin', 'spinner',
+                'chat',
+                'collapse',
+                'userlist', 'title', 'useradmin', 'spinner',
                 'newpad', 'share', 'access', 'limit', 'unpinnedWarning',
                 'notifications'
             ], {});

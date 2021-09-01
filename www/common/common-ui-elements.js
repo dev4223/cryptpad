@@ -526,6 +526,7 @@ define([
         var button;
         var sframeChan = common.getSframeChannel();
         var appType = (common.getMetadataMgr().getMetadata().type || 'pad').toUpperCase();
+        data = data || {};
         switch (type) {
             case 'export':
                 button = $('<button>', {
@@ -835,8 +836,8 @@ define([
                 button = $(h('button.cp-toolbar-tools', {
                     //title: data.title || '', // TODO display if the label text is collapsed
                 }, [
-                    h('i.fa.fa-wrench'),
-                    h('span.cp-toolbar-name', Messages.toolbar_tools)
+                    h('i.fa.' + (data.icon || 'fa-wrench')),
+                    h('span.cp-toolbar-name', data.text || Messages.toolbar_tools)
                 ])).click(common.prepareFeedback(type));
                 /*
                 window.setTimeout(function () {
@@ -902,7 +903,6 @@ define([
                 button
                 .click(common.prepareFeedback(type))
                 .click(function () {
-                    data = data || {};
                     if (typeof(data.load) !== "function" || typeof(data.make) !== "function") {
                         return;
                     }
@@ -910,7 +910,6 @@ define([
                 });
                 break;
             default:
-                data = data || {};
                 var drawerCls = data.drawer === false ? '' : '.cp-toolbar-drawer-element';
                 var icon = data.icon || "fa-question";
                 button = $(h('button', {
@@ -919,10 +918,13 @@ define([
                 }, [
                     h('i.fa.' + icon),
                     h('span.cp-toolbar-name'+drawerCls, data.text)
-                ])).click(common.prepareFeedback(data.name || 'DEFAULT'));
-                if (callback) {
-                    button.click(callback);
-                }
+                ]));
+                var feedbackHandler = common.prepareFeedback(data.name || 'DEFAULT');
+                button[0].addEventListener('click', function () {
+                    feedbackHandler();
+                    if (typeof(callback) !== 'function') { return; }
+                    callback();
+                });
                 if (data.style) { button.attr('style', data.style); }
                 if (data.id) { button.attr('id', data.id); }
                 if (data.hiddenReadOnly) { button.addClass('cp-hidden-if-readonly'); }
@@ -1032,10 +1034,19 @@ define([
                 icon: 'fa-picture-o',
                 action: function () {
                     var _cfg = {
-                        types: ['file'],
+                        types: ['file', 'link'],
                         where: ['root']
                     };
                     common.openFilePicker(_cfg, function (data) {
+                        // Embed links
+                        if (data.static) {
+                            var a = h('a', {
+                                href: data.href
+                            }, data.name);
+                            cfg.embed(a, data);
+                            return;
+                        }
+                        // Embed files
                         if (data.type !== 'file') {
                             console.log("Unexpected data type picked " + data.type);
                             return;
@@ -1886,8 +1897,11 @@ define([
                 },
                 content: h('span', Messages.logoutEverywhere),
                 action: function () {
-                    Common.getSframeChannel().query('Q_LOGOUT_EVERYWHERE', null, function () {
-                        Common.gotoURL(origin + '/');
+                    UI.confirm(Messages.settings_logoutEverywhereConfirm, function (yes) {
+                        if (!yes) { return; }
+                        Common.getSframeChannel().query('Q_LOGOUT_EVERYWHERE', null, function () {
+                            Common.gotoURL(origin + '/');
+                        });
                     });
                 },
             });
@@ -2075,15 +2089,9 @@ define([
 
         var $container = $('<div>');
         var i = 0;
+
         var types = AppConfig.availablePadTypes.filter(function (p) {
-            if (p === 'drive') { return; }
-            if (p === 'teams') { return; }
-            if (p === 'contacts') { return; }
-            if (p === 'todo') { return; }
-            if (p === 'file') { return; }
-            if (p === 'accounts') { return; }
-            if (p === 'calendar') { return; }
-            if (p === 'poll') { return; } // Replaced by forms
+            if (AppConfig.hiddenTypes.indexOf(p) !== -1) { return; }
             if (!common.isLoggedIn() && AppConfig.registeredOnlyTypes &&
                 AppConfig.registeredOnlyTypes.indexOf(p) !== -1) { return; }
             return true;
@@ -3024,6 +3032,75 @@ define([
         UI.proposal(content, todo);
     };
 
+    UIElements.displayOpenLinkModal = function (common, data, dismiss) {
+        var name = Util.fixHTML(data.title);
+        var url = data.href;
+        var user = data.name;
+        //Messages.link_open = "Open URL";
+            // openLinkInNewTab ("Open Link in New Tab")
+            // fc_open ("Open")
+            // share_linkOpen ("Preview")
+            // resources_openInNewTab ("Open it in a new tab")
+        Messages.link_open = Messages.fc_open; // XXX 4.11.0
+
+        //Messages.link_store = "Store link in drive";
+            // toolbar_storeInDrive ? ("Store in CryptDrive")
+            // autostore_store ? ("Store")
+        Messages.link_store = Messages.toolbar_storeInDrive; // XXX 4.11.0
+
+
+        var content = h('div', [
+            UI.setHTML(h('p'), Messages._getKey('notification_openLink', [name, user])),
+            h('pre', url),
+            UIElements.getVerifiedFriend(common, data.curve, user)
+        ]);
+        var clicked = false;
+        var modal;
+        var buttons = [{
+            name: Messages.friendRequest_later,
+            onClick: function () {
+                if (clicked) { return true; }
+                clicked = true;
+                Feedback.send('LINK_RECEIVED_LATER');
+            },
+            keys: [27]
+        }, {
+            className: 'primary',
+            name: Messages.link_open,
+            onClick: function () {
+                if (clicked) { return true; }
+                clicked = true;
+                common.openUnsafeURL(url);
+                Feedback.send("LINK_RECEIVED_OPEN");
+            },
+            keys: [13]
+        }, {
+            className: 'primary',
+            name: Messages.link_store,
+            onClick: function () {
+                if (clicked) { return; }
+                clicked = true;
+                common.getSframeChannel().query("Q_DRIVE_USEROBJECT", {
+                    cmd: "addLink",
+                    data: {
+                        name: name,
+                        href: url,
+                        path: ['root']
+                    }
+                }, function () {
+                    modal.closeModal();
+                    dismiss();
+                    Feedback.send("LINK_RECEIVED_STORE");
+                });
+                return true;
+            },
+            keys: [[13, 'ctrl']]
+        }];
+        var _modal = UI.dialog.customModal(content, {buttons: buttons});
+        modal = UI.openCustomModal(_modal);
+        return modal;
+    };
+
     UIElements.displayAddOwnerModal = function (common, data) {
         var priv = common.getMetadataMgr().getPrivateData();
         var sframeChan = common.getSframeChannel();
@@ -3619,6 +3696,28 @@ define([
         var size = $container.outerHeight();
         var pos = el.getBoundingClientRect();
         return (pos.bottom < size) && (pos.y > 0);
+    };
+
+    UIElements.is24h = function () {
+        try {
+            return !new Intl.DateTimeFormat(navigator.language, { hour: 'numeric' }).format(0).match(/AM/);
+        } catch (e) {}
+        return false;
+    };
+
+    UIElements.fixInlineBRs = function (htmlString) {
+        if (!htmlString && typeof(htmlString) === 'string') { return; }
+        var lines = htmlString.split('<br>');
+        if (lines.length === 1) { return lines; }
+        var len = lines.length - 1;
+        var result = [];
+        for (var i = 0; i <= len; i++) {
+            result.push(lines[i]);
+            if (i < len) {
+                result.push(h('br'));
+            }
+        }
+        return result;
     };
 
     UIElements.openSnapshotsModal = function (common, load, make, remove) {

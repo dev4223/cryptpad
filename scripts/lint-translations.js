@@ -2,13 +2,12 @@ var EN = require("../www/common/translations/messages.json");
 
 var simpleTags = [
     '<br>',
-    '<br />',
-    '<br/>',
     '<a href="/login/">',
     '<a href="/register/">',
 
     // FIXME
     "<a href='#'>",
+    '<a href="#docs">',
     '<h3>',
     '</h3>',
 
@@ -33,6 +32,25 @@ var KNOWN_ISSUES = [ // FIXME
     //'register_notes',
 ];
 
+var special_rules = {};
+
+special_rules.en = function (s) {
+    // Prefer the american -ize suffix for verbs rather than -ise
+    return /[^w]ise/.test(s);
+};
+
+special_rules.fr = function (s) {
+/*
+    hacky regexp to check whether there are any instances of ':'
+    which do not have the preceding space as is expected.
+    ignore instances where the following character is a '/'
+    because this is probably a URL (http(s)://)
+*/
+    return /\S[:;\?\!][^\/]{1,}/.test(s);
+};
+
+var noop = function () {};
+
 var processLang = function (map, lang, primary) {
     var announced = false;
     var announce = function () {
@@ -41,6 +59,7 @@ var processLang = function (map, lang, primary) {
         console.log("NEXT LANGUAGE: ", lang);
     };
 
+    var special = special_rules[lang] || noop;
     Object.keys(map).forEach(function (k) {
         if (!EN[k]) { return; }
         if (KNOWN_ISSUES.indexOf(k) !== -1) { return; }
@@ -49,7 +68,7 @@ var processLang = function (map, lang, primary) {
         if (typeof(s) !== 'string') { return; }
         var usesHTML;
 
-        s.replace(/<.*?>/g, function (html) {
+        s.replace(/<[\s\S]*?>/g, function (html) {
             if (simpleTags.indexOf(html) !== -1) { return; }
             announce();
             usesHTML = true;
@@ -58,7 +77,15 @@ var processLang = function (map, lang, primary) {
             }
         });
 
-        if (usesHTML) {
+        var weirdCapitalization;
+        s.replace(/cryptpad(\.fr)*/gi, function (brand) {
+            if (['CryptPad', 'cryptpad.fr'].includes(brand)) { return; }
+            weirdCapitalization = true;
+        });
+
+        var specialViolation = special(s);
+
+        if (usesHTML || weirdCapitalization || specialViolation) {
             announce();
             console.log("%s", s);
             console.log("[%s]\n", k);
@@ -70,7 +97,7 @@ processLang(EN, 'en', true);
 
 [
   'ar',
-  'bn_BD',
+  //'bn_BD',
   'ca',
   'de',
   'es',
@@ -86,11 +113,15 @@ processLang(EN, 'en', true);
   'ro',
   'ru',
   'sv',
-  'te',
+  //'te',
   'tr',
   'zh',
 ].forEach(function (lang) {
-    var map = require("../www/common/translations/messages." + lang + ".json");
-    if (!Object.keys(map).length) { return; }
-    processLang(map, lang);
+    try {
+        var map = require("../www/common/translations/messages." + lang + ".json");
+        if (!Object.keys(map).length) { return; }
+        processLang(map, lang);
+    } catch (err) {
+        console.error(err);
+    }
 });

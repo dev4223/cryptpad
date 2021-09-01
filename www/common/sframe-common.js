@@ -145,8 +145,7 @@ define([
             var hexFileName = secret.channel;
             var origin = data.fileHost || data.origin;
             var src = origin + Hash.getBlobPathFromHex(hexFileName);
-            return '<media-tag src="' + src + '" data-crypto-key="cryptpad:' + key + '">' +
-                   '</media-tag>';
+            return UI.mediaTag(src, key).outerHTML;
         }
         return;
     };
@@ -922,7 +921,7 @@ define([
             });
 
             ctx.sframeChan.on('EV_WORKER_TIMEOUT', function () {
-                UI.errorLoadingScreen(Messages.timeoutError, false, function () {
+                UI.errorLoadingScreen(Messages.timeoutError, false, function () { // XXX 4.11.0 mobile users can't necessarily hit 'ESC' as this message suggests. provice a click option
                     funcs.gotoURL('');
                 });
             });

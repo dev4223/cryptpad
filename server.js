@@ -90,7 +90,7 @@ var setHeaders = (function () {
         return function (req, res) {
             // apply a bunch of cross-origin headers for XLSX export in FF and printing elsewhere
             applyHeaderMap(res, {
-                "Cross-Origin-Opener-Policy": /^\/sheet\//.test(req.url)? 'same-origin': '',
+                "Cross-Origin-Opener-Policy": /^\/(sheet|presentation|doc|convert)\//.test(req.url)? 'same-origin': '',
             });
 
             if (Env.NO_SANDBOX) { // handles correct configuration for local development
@@ -311,7 +311,7 @@ var httpServer = Env.httpServer = Http.createServer(app);
 nThen(function (w) {
     Fs.exists(__dirname + "/customize", w(function (e) {
         if (e) { return; }
-        console.log("Cryptpad is customizable, see customize.dist/readme.md for details");
+        console.log("CryptPad is customizable, see customize.dist/readme.md for details");
     }));
 }).nThen(function (w) {
     httpServer.listen(config.httpPort,config.httpAddress,function(){
