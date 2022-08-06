@@ -17,11 +17,19 @@ define([
             category = window.location.hash.slice(1);
             window.location.hash = '';
         }
+        var addRpc = function (sframeChan, CryptPad, Utils) {
+            // X2T
+            sframeChan.on('Q_OO_CONVERT', function (obj, cb) {
+                obj.modal = 'x2t';
+                Utils.initUnsafeIframe(obj, cb);
+            });
+        };
         var addData = function (obj) {
             if (category) { obj.category = category; }
         };
         SFCommonO.start({
             noRealtime: true,
+            addRpc: addRpc,
             addData: addData
         });
     });

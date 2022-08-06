@@ -1,5 +1,6 @@
 define([
     'jquery',
+    '/api/config',
     '/common/common-util.js',
     '/common/common-hash.js',
     '/common/common-interface.js',
@@ -11,9 +12,18 @@ define([
     '/customize/messages.js',
     '/bower_components/nthen/index.js',
     '/customize/pages.js',
-], function ($, Util, Hash, UI, UIElements, Feedback, Modal, h, Clipboard,
+], function ($, ApiConfig, Util, Hash, UI, UIElements, Feedback, Modal, h, Clipboard,
              Messages, nThen, Pages) {
     var Share = {};
+
+    var embeddableApps = [
+        'code',
+        'form',
+        'kanban',
+        'pad',
+        'slide',
+        'whiteboard',
+    ].map(app => `/${app}/`);
 
     var createShareWithFriends = function (config, onShare, linkGetter) {
         var common = config.common;
@@ -76,6 +86,7 @@ define([
         var shareButton = {
             className: 'primary cp-share-with-friends',
             name: Messages.share_withFriends,
+            iconClass: '.fa.fa-shhare-alt',
             onClick: function () {
                 var href;
                 nThen(function (waitFor) {
@@ -420,12 +431,12 @@ define([
                 embed: Util.isChecked($link.find('#cp-share-embed'))
             }));
         });
-
         var linkButtons = [
             makeCancelButton(),
             !opts.sharedFolder && {
                 className: 'secondary cp-nobar',
                 name: Messages.share_linkOpen,
+                iconClass: '.fa.fa-eye',
                 onClick: function () {
                     opts.saveValue();
                     var v = opts.getLinkValue({
@@ -442,6 +453,7 @@ define([
             }, {
                 className: 'primary cp-nobar',
                 name: Messages.share_linkCopy,
+                iconClass: '.fa.fa-link',
                 onClick: function () {
                     opts.saveValue();
                     var v = opts.getLinkValue({
@@ -496,6 +508,7 @@ define([
             {
                 className: 'primary',
                 name: Messages.share_linkCopy,
+                iconClass: '.fa.fa-link',
                 onClick: function () {
                     Feedback.send('SHARE_EMBED');
                     var v = opts.getEmbedValue();
@@ -717,7 +730,7 @@ define([
         opts.access = true; // Allow the use of the modal even if the pad is not stored
 
         var hashes = opts.hashes;
-        if (!hashes || (!hashes.editHash && !hashes.viewHash && !opts.static)) { return; }
+        if (!hashes || (!hashes.editHash && !hashes.viewHash && !opts.static)) { return cb("NO_HASHES"); }
 
         var teams = getEditableTeams(common, opts);
         opts.teams = teams;
@@ -768,7 +781,7 @@ define([
             icon: "fa fa-link",
             active: !contactsActive,
         }];
-        if (!opts.static) {
+        if (!opts.static && ApiConfig.enableEmbedding && embeddableApps.includes(pathname)) {
             tabs.push({
                 getTab: getEmbedTab,
                 title: Messages.share_embedCategory,
@@ -870,6 +883,7 @@ define([
             {
                 className: 'primary',
                 name: Messages.share_linkCopy,
+                iconClass: '.fa.fa-link',
                 onClick: function () {
                     var v = opts.getLinkValue();
                     var success = Clipboard.copy(v);
@@ -915,6 +929,7 @@ define([
         }, {
             className: 'primary',
             name: Messages.share_mediatagCopy,
+            iconClass: '.fa.fa-link',
             onClick: function () {
                 var v = common.getMediatagFromHref(opts.fileData);
                 var success = Clipboard.copy(v);
@@ -960,11 +975,16 @@ define([
             title: Messages.share_linkCategory,
             icon: "fa fa-link",
             active: !hasFriends,
-        }, {
-            getTab: getFileEmbedTab,
-            title: Messages.share_embedCategory,
-            icon: "fa fa-code",
         }];
+
+        if (ApiConfig.enableEmbedding) {
+            tabs.push({
+                getTab: getFileEmbedTab,
+                title: Messages.share_embedCategory,
+                icon: "fa fa-code",
+            });
+        }
+
         Modal.getModal(common, opts, tabs, cb);
     };
 

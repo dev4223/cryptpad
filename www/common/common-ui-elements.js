@@ -156,9 +156,11 @@ define([
 
         var icons = Object.keys(users).map(function (key, i) {
             var data = users[key];
-            var name = data.displayName || data.name || Messages.anonymous;
-            var avatar = h('span.cp-usergrid-avatar.cp-avatar');
-            common.displayAvatar($(avatar), data.avatar, name);
+            var name = UI.getDisplayName(data.displayName || data.name);
+            var avatar = h('span.cp-usergrid-avatar.cp-avatar', {
+                'aria-hidden': true,
+            });
+            common.displayAvatar($(avatar), data.avatar, name, Util.noop, data.uid);
             var removeBtn, el;
             if (config.remove) {
                 removeBtn = h('span.fa.fa-times');
@@ -521,6 +523,15 @@ define([
         UI.openCustomModal(modal);
     };
 
+    UIElements.openDirectlyConfirmation = function (common, cb) {
+        cb = cb || Util.noop;
+        UI.confirm(h('p', Messages.ui_openDirectly), yes => {
+            if (!yes) { return void cb(yes); }
+            common.openDirectly();
+            cb(yes);
+        });
+    };
+
     UIElements.createButton = function (common, type, rightside, data, callback) {
         var AppConfig = common.getAppConfig();
         var button;
@@ -649,14 +660,17 @@ define([
                 if (!AppConfig.enableTemplates) { return; }
                 if (!common.isLoggedIn()) { return; }
                 button = $('<button>', {
-                    'class': 'fa fa-bookmark cp-toolbar-icon-template',
+                    'class': 'cptools cptools-new-template cp-toolbar-icon-template',
                 }).append($('<span>', {'class': 'cp-toolbar-drawer-element'}).text(Messages.saveTemplateButton));
-                if (data.rt) {
+                if (data.rt || data.callback) {
                     button
                     .click(function () {
                         var title = data.getTitle() || document.title;
                         var todo = function (val) {
                             if (typeof(val) !== "string") { return; }
+                            if (data.callback) {
+                                return void data.callback(val);
+                            }
                             var toSave = data.rt.getUserDoc();
                             if (val.trim()) {
                                 val = val.trim();
@@ -753,7 +767,7 @@ define([
                     //title: Messages.previewButtonTitle, // TODO display if the label text is collapsed
                 }, [
                     h('i.fa.fa-eye'),
-                    h('span.cp-toolbar-name', Messages.share_linkOpen)
+                    h('span.cp-toolbar-name', Messages.toolbar_preview)
                 ])).click(common.prepareFeedback(type));
                 break;
             case 'print':
@@ -803,7 +817,9 @@ define([
                     h('span.cp-toolbar-name.cp-toolbar-drawer-element', Messages.toolbar_storeInDrive)
                 ])).click(common.prepareFeedback(type)).click(function () {
                     $(button).hide();
-                    common.getSframeChannel().query("Q_AUTOSTORE_STORE", null, function (err, obj) {
+                    common.getSframeChannel().query("Q_AUTOSTORE_STORE", {
+                        forceOwnDrive: true,
+                    }, function (err, obj) {
                         var error = err || (obj && obj.error);
                         if (error) {
                             $(button).show();
@@ -872,6 +888,14 @@ define([
                 .text(Messages.propertiesButton))
                 .click(common.prepareFeedback(type))
                 .click(function () {
+                    var isTop;
+                    try {
+                        isTop = common.getMetadataMgr().getPrivateData().isTop;
+                    } catch (err) { console.error(err); }
+                    if (!isTop) {
+                        return void UIElements.openDirectlyConfirmation(common);
+                    }
+
                     sframeChan.event('EV_PROPERTIES_OPEN');
                 });
                 break;
@@ -1341,7 +1365,7 @@ define([
             else if (quota < 1) { $usage.addClass('cp-limit-usage-warning'); }
             else { $usage.addClass('cp-limit-usage-above'); }
             var $text = $('<span>', {'class': 'cp-limit-usage-text'});
-            $text.html(Messages._getKey('storageStatus', [prettyUsage, prettyLimit]));
+            $text.html(Messages._getKey('storageStatus', [prettyUsage, prettyLimit])); // TODO avoid use of .html() if possible
             $container.prepend($text);
             $limit.append($usage);
         };
@@ -1415,9 +1439,20 @@ define([
         }
 
         // Button
-        var $button = $('<button>', {
-            'class': config.buttonCls || ''
-        }).append($('<span>', {'class': 'cp-dropdown-button-title'}).html(config.text || ""));
+        var $button;
+
+        if (config.buttonContent) {
+            $button = $(h('button', {
+                class: config.buttonCls || '',
+            }, [
+                h('span.cp-dropdown-button-title', config.buttonContent),
+            ]));
+        } else {
+            $button = $('<button>', {
+                'class': config.buttonCls || ''
+            }).append($('<span>', {'class': 'cp-dropdown-button-title'}).text(config.text || ""));
+        }
+
         if (config.caretDown) {
             $('<span>', {
                 'class': 'fa fa-caret-down',
@@ -1437,18 +1472,41 @@ define([
             window.setTimeout(function () { $innerblock.hide(); }, 0);
         };
 
-        config.options.forEach(function (o) {
-            if (!isValidOption(o)) { return; }
-            if (isElement(o)) { return $innerblock.append($(o)); }
-            var $el = $('<' + o.tag + '>', o.attributes || {}).html(o.content || '');
-            $el.appendTo($innerblock);
-            if (typeof(o.action) === 'function') {
-                $el.click(function (e) {
-                    var close = o.action(e);
-                    if (close) { hide(); }
-                });
-            }
-        });
+        var setOptions = function (options) {
+            options.forEach(function (o) {
+                if (!isValidOption(o)) { return; }
+                if (isElement(o)) { return $innerblock.append(o); }
+                var $el = $(h(o.tag, (o.attributes || {})));
+
+                if (typeof(o.content) === 'string' || (o.content instanceof Element)) {
+                    o.content = [o.content];
+                }
+                if (Array.isArray(o.content)) {
+                    o.content.forEach(function (item) {
+                        if (item instanceof Element) {
+                            return void $el.append(item);
+                        }
+                        if (typeof(item) === 'string') {
+                            $el[0].appendChild(document.createTextNode(item));
+                        }
+                    });
+                    // array of elements or text nodes
+                }
+
+                $el.appendTo($innerblock);
+                if (typeof(o.action) === 'function') {
+                    $el.click(function (e) {
+                        var close = o.action(e);
+                        if (close) { hide(); }
+                    });
+                }
+            });
+        };
+        setOptions(config.options);
+        $container.setOptions = function (options) {
+            $innerblock.empty();
+            setOptions(options);
+        };
 
         $container.append($button).append($innerblock);
 
@@ -1482,7 +1540,8 @@ define([
             $innerblock.show();
             $innerblock.find('.cp-dropdown-element-active').removeClass('cp-dropdown-element-active');
             if (config.isSelect && value) {
-                var $val = $innerblock.find('[data-value="'+value+'"]');
+                // We use JSON.stringify here to escape quotes
+                var $val = $innerblock.find('[data-value='+JSON.stringify(value)+']');
                 setActive($val);
                 try {
                     $innerblock.scrollTop($val.position().top + $innerblock.scrollTop());
@@ -1521,8 +1580,8 @@ define([
             $container.on('click', 'a', function () {
                 value = $(this).data('value');
                 var $val = $(this);
-                var textValue = $val.html() || value;
-                $button.find('.cp-dropdown-button-title').html(textValue);
+                var textValue = $val.text() || value;
+                $button.find('.cp-dropdown-button-title').text(textValue);
                 $container.onChange.fire(textValue, value);
             });
             $container.keydown(function (e) {
@@ -1569,7 +1628,8 @@ define([
                 window.clearTimeout(to);
                 var c = String.fromCharCode(e.which);
                 pressed += c;
-                var $value = $innerblock.find('[data-value^="'+pressed+'"]:first');
+                // We use JSON.stringify here to escape quotes
+                var $value = $innerblock.find('[data-value^='+JSON.stringify(pressed)+']:first');
                 if ($value.length) {
                     setActive($value);
                     $innerblock.scrollTop($value.position().top + $innerblock.scrollTop());
@@ -1579,16 +1639,20 @@ define([
                 }, 1000);
             });
 
-            $container.setValue = function (val, name) {
+            $container.setValue = function (val, name, sync) {
                 value = val;
-                var $val = $innerblock.find('[data-value="'+val+'"]');
-                var textValue = name || $val.html() || val;
-                setTimeout(function () {
-                    $button.find('.cp-dropdown-button-title').html(textValue);
-                });
+                // We use JSON.stringify here to escape quotes
+                var $val = $innerblock.find('[data-value='+JSON.stringify(val)+']');
+                var textValue = name || $val.text() || val;
+                var f = function () {
+                    $button.find('.cp-dropdown-button-title').text(textValue);
+                };
+
+                if (sync) { return void f(); }
+                setTimeout(f);
             };
             $container.getValue = function () {
-                return value || '';
+                return typeof(value) === "undefined" ? '' : value;
             };
         }
 
@@ -1605,27 +1669,27 @@ define([
 
         var template = function (line, link) {
             if (!line || !link) { return; }
-            var p = $('<p>').html(line)[0];
+            var p = Pages.setHTML(h('p'), line);
             var sub = link.cloneNode(true);
-
-/*  This is a hack to make relative URLs point to the main domain
-    instead of the sandbox domain. It will break if the admins have specified
-    some less common URL formats for their customizable links, such as if they've
-    used a protocal-relative absolute URL. The URL API isn't quite safe to use
-    because of IE (thanks, Bill).  */
-            var href = sub.getAttribute('href');
-            if (/^\//.test(href)) { sub.setAttribute('href', origin + href); }
+            var href;
+            try {
+                href = new URL(sub.getAttribute('href'), origin).href;
+            } catch (err) {
+                return; // don't return anything to display if their href causes URL to throw
+            }
             var a = p.querySelector('a');
             if (!a) { return; }
             sub.innerText = a.innerText;
+            sub.setAttribute('href', href);
             p.replaceChild(sub, a);
             return p;
         };
 
         var legalLine = template(Messages.info_imprintFlavour, Pages.imprintLink);
         var privacyLine = template(Messages.info_privacyFlavour, Pages.privacyLink);
-
         var faqLine = template(Messages.help_genericMore, Pages.docsLink);
+        var termsLine = template(Messages.info_termsFlavour, Pages.termsLink);
+        var sourceLine = template(Messages.info_sourceFlavour, Pages.sourceLink);
 
         var content = h('div.cp-info-menu-container', [
             h('div.logo-block', [
@@ -1636,9 +1700,13 @@ define([
                 h('span', Pages.versionString)
             ]),
             h('hr'),
-            legalLine,
-            privacyLine,
+            h('p', Pages.hostDescription),
+            h('hr'),
             faqLine,
+            termsLine,
+            privacyLine,
+            legalLine,
+            sourceLine,
         ]);
 
         $(content).find('a').attr('target', '_blank');
@@ -1660,33 +1728,45 @@ define([
         var metadataMgr = Common.getMetadataMgr();
 
         var displayNameCls = config.displayNameCls || 'cp-toolbar-user-name';
-        var $displayedName = $('<span>', {'class': displayNameCls});
 
         var priv = metadataMgr.getPrivateData();
         var accountName = Util.fixHTML(priv.accountName);
         var origin = priv.origin;
         var padType = metadataMgr.getMetadata().type;
 
-        var $userName = $('<span>');
         var options = [];
+        options.push({
+            tag: 'div',
+            attributes: {'class': 'cp-user-menu-logo'},
+            content: h('span', [
+                h('img', {src: '/customize/CryptPad_logo_grey.svg',alt: 'CryptPad logo',}), // XXX hardcoded alt text?
+                h('span.cp-user-menu-logo-text', "CryptPad")
+            ]),
+        });
         if (config.displayNameCls) {
-            var $userAdminContent = $('<p>');
+            var userAdminContent = [];
             if (accountName) {
-                var $userAccount = $('<span>').append(Messages.user_accountName + ': ');
-
-                $userAdminContent.append($userAccount).append(accountName);
-                $userAdminContent.append($('<br>'));
+                userAdminContent.push(h('span', [
+                    Messages.user_accountName,
+                    ': ',
+                    h('span', accountName),
+                ]));
+                userAdminContent.push(h('br'));
             }
             if (config.displayName && !AppConfig.disableProfile) {
                 // Hide "Display name:" in read only mode
-                $userName.append(Messages.user_displayName + ': ');
-                $userName.append($displayedName);
+                userAdminContent.push(h('span', [
+                    Messages.user_displayName,
+                    ': ',
+                    h('span', {
+                        class: displayNameCls,
+                    }),
+                ]));
             }
-            $userAdminContent.append($userName);
             options.push({
                 tag: 'p',
                 attributes: {'class': 'cp-toolbar-account'},
-                content: $userAdminContent.html()
+                content: userAdminContent,
             });
         }
 
@@ -1936,8 +2016,7 @@ define([
             }
         }
         var $icon = $('<span>', {'class': 'fa fa-user-secret'});
-        //var $userbig = $('<span>', {'class': 'big'}).append($displayedName.clone());
-        var $userButton = $('<div>').append($icon);//.append($userbig);
+        var $userButton = $('<div>').append($icon);
         if (accountName) {
             $userButton = $('<div>').append(accountName);
         }
@@ -1947,8 +2026,17 @@ define([
             // If no display name, do not display the parentheses
             $userbig.append($('<span>', {'class': 'account-name'}).text(accountName));
         }*/
+
+        options.forEach(function (option) {
+            var f = option.action;
+            if (!f) { return; }
+            option.action = function () {
+                f();
+                return true;
+            };
+        });
         var dropdownConfigUser = {
-            text: $userButton.html(), // Button initial text
+            buttonContent: $userButton[0],
             options: options, // Entries displayed in the menu
             left: true, // Open to the left of the button
             container: config.$initBlock, // optional
@@ -1993,9 +2081,12 @@ define([
         var loadingAvatar;
         var to;
         var oldUrl = '';
+        var oldUid;
+        var oldName;
         var updateButton = function () {
             var myData = metadataMgr.getUserData();
             var privateData = metadataMgr.getPrivateData();
+            var uid = myData.uid;
             if (!priv.plan && privateData.plan) {
                 config.$initBlock.empty();
                 metadataMgr.off('change', updateButton);
@@ -2010,18 +2101,19 @@ define([
                 return;
             }
             loadingAvatar = true;
-            var newName = myData.name;
+            var newName = UI.getDisplayName(myData.name);
             var url = myData.avatar;
-            $displayName.text(newName || Messages.anonymous);
-            if (accountName && oldUrl !== url) {
+            $displayName.text(newName);
+            if ((accountName && oldUrl !== url) || !accountName && uid !== oldUid || oldName !== newName) {
                 $avatar.html('');
-                Common.displayAvatar($avatar, url,
-                        newName || Messages.anonymous, function ($img) {
+                Common.displayAvatar($avatar, url, newName, function ($img) {
                     oldUrl = url;
+                    oldUid = uid;
+                    oldName = newName;
                     $userAdmin.find('> button').removeClass('cp-avatar');
                     if ($img) { $userAdmin.find('> button').addClass('cp-avatar'); }
                     loadingAvatar = false;
-                });
+                }, uid);
                 return;
             }
             loadingAvatar = false;
@@ -2046,7 +2138,9 @@ define([
                     'data-value': l,
                     'href': '#',
                 },
-                content: languages[l] // Pretty name of the language value
+                content: [ // supplying content as an array ensures it's a text node, not parsed HTML
+                    languages[l] // Pretty name of the language value
+                ],
             });
         });
         var dropdownConfig = {
@@ -2070,6 +2164,7 @@ define([
     };
 
 
+
     UIElements.createNewPadModal = function (common) {
         // if in drive, show new pad modal instead
         if ($(".cp-app-drive-element-row.cp-app-drive-new-ghost").length !== 0) {
@@ -2083,7 +2178,7 @@ define([
         var $modal = modal.$modal;
         var $title = $(h('h3', [ h('i.fa.fa-plus'), ' ', Messages.fm_newButton ]));
 
-        var $description = $('<p>').html(Messages.creation_newPadModalDescription);
+        var $description = $(Pages.setHTML(h('p'), Messages.creation_newPadModalDescription));
         $modal.find('.cp-modal').append($title);
         $modal.find('.cp-modal').append($description);
 
@@ -2096,6 +2191,7 @@ define([
                 AppConfig.registeredOnlyTypes.indexOf(p) !== -1) { return; }
             return true;
         });
+
         types.forEach(function (p) {
             var $element = $('<li>', {
                 'class': 'cp-icons-element',
@@ -2108,6 +2204,12 @@ define([
                 $modal.hide();
                 common.openURL('/' + p + '/');
             });
+            var premium = common.checkRestrictedApp(p);
+            if (premium < 0) {
+                $element.addClass('cp-app-hidden cp-app-disabled');
+            } else if (premium === 0) {
+                $element.addClass('cp-app-disabled');
+            }
         });
 
         var selected = -1;
@@ -2251,6 +2353,7 @@ define([
 
         var type = metadataMgr.getMetadataLazy().type || privateData.app;
         var fromFileData = privateData.fromFileData;
+        var fromContent = privateData.fromContent;
 
         var $body = $('body');
         var $creationContainer = $('<div>', { id: 'cp-creation-container' }).appendTo($body);
@@ -2270,7 +2373,11 @@ define([
 
         // Title
         //$creation.append(h('h2.cp-creation-title', Messages.newButtonTitle));
-        var newPadH3Title = Messages['button_new' + type]; // Messages.button_newform
+        var newPadH3Title = Messages._getKey('creation_new',[Messages.type[type]]);
+
+        var early = common.checkRestrictedApp(type);
+        var domain = Config.httpUnsafeOrigin || 'CryptPad';
+        if (/^http/.test(domain)) { domain = domain.replace(/^https?\:\/\//, ''); }
 
         var title = h('div.cp-creation-title', [
             UI.getFileIcon({type: type})[0],
@@ -2280,6 +2387,12 @@ define([
             ])
         ]);
         $creation.append(title);
+
+        if (early === 1) {
+            $creation.append(h('div.cp-creation-early.alert.alert-warning', Messages._getKey('premiumAccess', [
+                domain
+            ])));
+        }
         //var colorClass = 'cp-icon-color-'+type;
         //$creation.append(h('h2.cp-creation-title.'+colorClass, Messages.newButtonTitle));
 
@@ -2303,6 +2416,7 @@ define([
             var teams = Object.keys(privateData.teams).map(function (id) {
                 var data = privateData.teams[id];
                 var avatar = h('span.cp-creation-team-avatar.cp-avatar');
+                // We assume that teams always have a non-empty name, so we don't need a UID
                 common.displayAvatar($(avatar), data.avatar, data.name);
                 return h('div.cp-creation-team', {
                     'data-id': id,
@@ -2431,14 +2545,14 @@ define([
                 }
                 return b.used - a.used;
             });
-            if (!appCfg.noTemplates) {
+            /*if (!appCfg.noTemplates) {
                 allData.unshift({
                     name: Messages.creation_newTemplate,
                     id: -1,
                     //icon: h('span.fa.fa-bookmark')
                     icon: h('span.cptools.cptools-new-template')
                 });
-            }
+            }*/
             if (!privateData.newTemplate) {
                 allData.unshift({
                     name: Messages.creation_noTemplate,
@@ -2505,6 +2619,14 @@ define([
                     if (err || (res && res.error)) { return; }
                     todo(res.data);
                 });
+            }
+            else if (fromContent) {
+                allData = [{
+                    name: fromContent.title,
+                    id: 0,
+                    icon: h('span.cptools.cptools-poll'),
+                }];
+                redraw(0);
             }
             else {
                 redraw(0);
@@ -3036,22 +3158,10 @@ define([
         var name = Util.fixHTML(data.title);
         var url = data.href;
         var user = data.name;
-        //Messages.link_open = "Open URL";
-            // openLinkInNewTab ("Open Link in New Tab")
-            // fc_open ("Open")
-            // share_linkOpen ("Preview")
-            // resources_openInNewTab ("Open it in a new tab")
-        Messages.link_open = Messages.fc_open; // XXX 4.11.0
-
-        //Messages.link_store = "Store link in drive";
-            // toolbar_storeInDrive ? ("Store in CryptDrive")
-            // autostore_store ? ("Store")
-        Messages.link_store = Messages.toolbar_storeInDrive; // XXX 4.11.0
-
 
         var content = h('div', [
             UI.setHTML(h('p'), Messages._getKey('notification_openLink', [name, user])),
-            h('pre', url),
+            h('pre.cp-link-preview', url),
             UIElements.getVerifiedFriend(common, data.curve, user)
         ]);
         var clicked = false;
@@ -3066,7 +3176,7 @@ define([
             keys: [27]
         }, {
             className: 'primary',
-            name: Messages.link_open,
+            name: Messages.fc_open,
             onClick: function () {
                 if (clicked) { return true; }
                 clicked = true;
@@ -3076,7 +3186,7 @@ define([
             keys: [13]
         }, {
             className: 'primary',
-            name: Messages.link_store,
+            name: Messages.toolbar_storeInDrive,
             onClick: function () {
                 if (clicked) { return; }
                 clicked = true;
@@ -3106,7 +3216,7 @@ define([
         var sframeChan = common.getSframeChannel();
         var msg = data.content.msg;
 
-        var name = Util.fixHTML(msg.content.user.displayName) || Messages.anonymous;
+        var name = Util.fixHTML(UI.getDisplayName(msg.content.user.displayName));
         var title = Util.fixHTML(msg.content.title);
 
         var text = Messages._getKey('owner_add', [name, title]);
@@ -3238,7 +3348,7 @@ define([
         var sframeChan = common.getSframeChannel();
         var msg = data.content.msg;
 
-        var name = Util.fixHTML(msg.content.user.displayName) || Messages.anonymous;
+        var name = Util.fixHTML(UI.getDisplayName(msg.content.user.displayName));
         var title = Util.fixHTML(msg.content.title);
 
         var text = Messages._getKey('owner_team_add', [name, title]);
@@ -3353,13 +3463,15 @@ define([
         var verified = h('p');
         var $verified = $(verified);
 
+        name = UI.getDisplayName(name);
         if (priv.friends && priv.friends[curve]) {
             $verified.addClass('cp-notifications-requestedit-verified');
             var f = priv.friends[curve];
             $verified.append(h('span.fa.fa-certificate'));
             var $avatar = $(h('span.cp-avatar')).appendTo($verified);
-            $verified.append(h('p', Messages._getKey('isContact', [f.displayName])));
-            common.displayAvatar($avatar, f.avatar, f.displayName);
+            name = UI.getDisplayName(f.displayName);
+            $verified.append(h('p', Messages._getKey('isContact', [name])));
+            common.displayAvatar($avatar, f.avatar, name, Util.noop, f.uid);
         } else {
             $verified.append(Messages._getKey('isNotContact', [name]));
         }
@@ -3369,7 +3481,7 @@ define([
     UIElements.displayInviteTeamModal = function (common, data) {
         var msg = data.content.msg;
 
-        var name = Util.fixHTML(msg.content.user.displayName) || Messages.anonymous;
+        var name = Util.fixHTML(UI.getDisplayName(msg.content.user.displayName));
         var teamName = Util.fixHTML(Util.find(msg, ['content', 'team', 'metadata', 'name']) || '');
 
         var verified = UIElements.getVerifiedFriend(common, msg.author, name);
@@ -3453,7 +3565,8 @@ define([
                 name: f.displayName,
                 curvePublic: f.curvePublic,
                 profile: f.profile,
-                notifications: f.notifications
+                notifications: f.notifications,
+                uid: f.uid,
             };
         });
     };
@@ -3552,7 +3665,7 @@ define([
         };
         // Set the value to receive from the autocomplete
         var toInsert = function (data, key) {
-            var name = data.name.replace(/[^a-zA-Z0-9]+/g, "-");
+            var name = UI.getDisplayName(data.name.replace(/[^a-zA-Z0-9]+/g, "-"));
             return "[@"+name+"|"+key+"]";
         };
 
@@ -3605,18 +3718,20 @@ define([
                     var avatar = h('span.cp-avatar', {
                         contenteditable: false
                     });
-                    common.displayAvatar($(avatar), data.avatar, data.name);
+
+                    var displayName = UI.getDisplayName(data.name);
+                    common.displayAvatar($(avatar), data.avatar, displayName);
                     return h('span.cp-mentions', {
                         'data-curve': data.curvePublic,
                         'data-notifications': data.notifications,
                         'data-profile': data.profile,
-                        'data-name': Util.fixHTML(data.name),
+                        'data-name': Util.fixHTML(displayName),
                         'data-avatar': data.avatar || "",
                     }, [
                         avatar,
                         h('span.cp-mentions-name', {
                             contenteditable: false
-                        }, data.name)
+                        }, displayName)
                     ]);
                 };
             }
@@ -3648,7 +3763,7 @@ define([
                     }).map(function (key) {
                         var data = sources[key];
                         return {
-                            label: data.name,
+                            label: UI.getDisplayName(data.name),
                             value: key
                         };
                     });
@@ -3683,10 +3798,12 @@ define([
             var obj = sources[key];
             if (!obj) { return; }
             var avatar = h('span.cp-avatar');
-            common.displayAvatar($(avatar), obj.avatar, obj.name);
+            var displayName = UI.getDisplayName(obj.name);
+
+            common.displayAvatar($(avatar), obj.avatar, displayName, Util.noop, obj.uid);
             var li = h('li.cp-autocomplete-value', [
                 avatar,
-                h('span', obj.name)
+                h('span', displayName),
             ]);
             return $(li).appendTo(ul);
         };

@@ -2,8 +2,8 @@
 // Note: This must only be loaded from inside of a sandbox-iframe.
 define([
     '/common/requireconfig.js',
-    '/common/test.js'
-], function (RequireConfig, Test) {
+    //'/common/test.js'
+], function (RequireConfig /*, Test */) {
     require.config(RequireConfig());
 
     // most of CryptPad breaks if you don't support isArray
@@ -11,11 +11,6 @@ define([
         Array.isArray = function(arg) { // CRYPTPAD_SHIM
             return Object.prototype.toString.call(arg) === '[object Array]';
         };
-    }
-
-    // RPC breaks if you don't support Number.MAX_SAFE_INTEGER
-    if (Number && !Number.MAX_SAFE_INTEGER) {
-        Number.MAX_SAFE_INTEGER = 9007199254740991;
     }
 
     var mkFakeStore = function () {
@@ -34,7 +29,7 @@ define([
     // This test is for keeping the testing infrastructure operating
     // until all tests have been registered.
     // This test is completed in common-interface.js
-    Test(function (t) { Test.__ASYNC_BLOCKER__ = t; });
+    //Test(function (t) { Test.__ASYNC_BLOCKER__ = t; });
 
     window.onerror = function (e) {
         if (/requirejs\.org/.test(e)) {

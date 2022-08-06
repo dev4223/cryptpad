@@ -16,8 +16,6 @@ define([
     '/customize/application_config.js',
     '/debug/chainpad.dist.js',
 
-    '/bower_components/secure-fabric.js/dist/fabric.min.js',
-
     'css!/bower_components/bootstrap/dist/css/bootstrap.min.css',
     'css!/bower_components/components-font-awesome/css/font-awesome.min.css',
     'less!/debug/app-debug.less',
@@ -728,7 +726,7 @@ define([
                 displayDoc(hjson);
             }
 
-            metadataMgr.updateTitle('');
+            //metadataMgr.updateTitle('');
 
             initializing = false;
             $('#cp-app-debug-history').show();

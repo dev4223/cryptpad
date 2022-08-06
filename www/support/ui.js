@@ -8,20 +8,20 @@ define([
     '/common/clipboard.js',
     '/common/common-ui-elements.js',
     '/customize/messages.js',
-], function ($, ApiConfig, h, UI, Hash, Util, Clipboard, UIElements, Messages) {
+    '/customize/pages.js',
+], function ($, ApiConfig, h, UI, Hash, Util, Clipboard, UIElements, Messages, Pages) {
 
-    var send = function (ctx, id, type, data, dest) {
+    var getDebuggingData = function (ctx, data) {
         var common = ctx.common;
-        var supportKey = ApiConfig.supportMailbox;
-        var supportChannel = Hash.getChannelIdFromKey(supportKey);
         var metadataMgr = common.getMetadataMgr();
-        var user = metadataMgr.getUserData();
         var privateData = metadataMgr.getPrivateData();
-
+        var user = metadataMgr.getUserData();
+        var teams = privateData.teams || {};
         data = data || {};
 
         data.sender = {
             name: user.name,
+            accountName: privateData.accountName,
             drive: privateData.driveChannel,
             channel: privateData.support,
             curvePublic: user.curvePublic,
@@ -34,16 +34,12 @@ define([
             data.sender.quota = ctx.pinUsage;
         }
 
-        data.id = id;
-        data.time = +new Date();
-
-        var teams = privateData.teams || {};
         if (!ctx.isAdmin) {
             data.sender.userAgent = Util.find(window, ['navigator', 'userAgent']);
             data.sender.vendor = Util.find(window, ['navigator', 'vendor']);
             data.sender.appVersion = Util.find(window, ['navigator', 'appVersion']);
-            data.sender.appVersion = Util.find(window, ['screen', 'width']);
-            data.sender.appVersion = Util.find(window, ['screen', 'height']);
+            data.sender.screenWidth = Util.find(window, ['screen', 'width']);
+            data.sender.screenHeight = Util.find(window, ['screen', 'height']);
             data.sender.blockLocation = privateData.blockLocation || '';
             data.sender.teams = Object.keys(teams).map(function (key) {
                 var team = teams[key];
@@ -57,7 +53,25 @@ define([
                 }
                 return ret;
             }).filter(Boolean);
+        }
 
+        return data;
+    };
+
+    var send = function (ctx, id, type, data, dest) {
+        var common = ctx.common;
+        var supportKey = ApiConfig.supportMailbox;
+        var supportChannel = Hash.getChannelIdFromKey(supportKey);
+        var metadataMgr = common.getMetadataMgr();
+        var user = metadataMgr.getUserData();
+        var privateData = metadataMgr.getPrivateData();
+
+        data = getDebuggingData(ctx, data);
+
+        data.id = id;
+        data.time = +new Date();
+
+        if (!ctx.isAdmin) {
             // "dest" is the recipient that is not the admin support mailbox.
             // In the support page, make sure dest is always ourselves.
             dest.channel = privateData.support;
@@ -82,6 +96,7 @@ define([
         }
     };
 
+
     var sendForm = function (ctx, id, form, dest) {
         var $form = $(form);
         var $cat = $form.find('.cp-support-form-category');
@@ -91,15 +106,13 @@ define([
         var $attachments = $form.find('.cp-support-attachments');
 
         var category = $cat.val().trim();
-        /*
-        // || ($form.closest('.cp-support-list-ticket').data('cat') || "").trim();
-        // Messages.support_formCategoryError = "Error: category is empty"; // TODO ensure this is translated before use
-
+/*
+Messages.support_formCategoryError = "Please select a ticket category from the dropdown menu"; // TODO
         if (!category) {
             console.log($cat);
             return void UI.alert(Messages.support_formCategoryError);
         }
-        */
+*/
 
         var title = $title.val().trim();
         if (!title) {
@@ -135,17 +148,18 @@ define([
 
     var makeCategoryDropdown = function (ctx, container, onChange, all) {
         var categories = [
+            // Msg.support_cat_data is left included because old tickets may still use it
             'account', // Msg.support_cat_account
-            'data', // Msg.support_cat_data
+            'drives', // Msg.support_cat_drives
+            'document', // Msg.support_cat_document,
+            Pages.customURLs.terms? 'abuse': undefined, // Msg.support_cat_abuse
             'bug', // Msg.support_cat_bug
-            // TODO report
             'other' // Msg.support_cat_other
         ];
         if (all) { categories.push('all'); } // Msg.support_cat_all
 
-
-
         categories = categories.map(function (key) {
+            if (!key) { return; }
             return {
                 tag: 'a',
                 content: h('span', Messages['support_cat_'+key]),
@@ -166,7 +180,16 @@ define([
         return $select;
     };
 
-    var makeForm = function (ctx, cb, title) {
+    var documentIdDocs = Pages.localizeDocsLink('https://docs.cryptpad.fr/en/user_guide/apps/general.html#properties');
+
+    var warningLinks = {
+        account: documentIdDocs,
+        document: documentIdDocs,
+        drives: documentIdDocs,
+        abuse: Pages.customURLs.terms,
+    };
+
+    var makeForm = function (ctx, cb, title, hideNotice) {
         var button;
 
         if (typeof(cb) === "function") {
@@ -181,18 +204,49 @@ define([
             value: ''
         });
         var catContainer = h('div.cp-dropdown-container' + (title ? '.cp-hidden': ''));
+        var notice;
+        if (!(hideNotice || ctx.isAdmin)) {
+            notice = h('div.alert.alert-info', Messages.support_warning_prompt);
+        }
+
+        var clickHandler = function (ev) {
+            ev.preventDefault();
+            var $link = $(this);
+            var href = $link.attr('href');
+            if (!href) { return; }
+            ctx.common.openUnsafeURL(href);
+        };
+
         makeCategoryDropdown(ctx, catContainer, function (key) {
             $(category).val(key);
-            // TODO add a hint suggesting relevant information to include for the chosen category
+            if (!notice) { return; }
+            //console.log(key);
+            // Msg.support_warning_abuse.support_warning_account.support_warning_bug.support_warning_document.support_warning_drives.support_warning_other
+            var warning = Messages['support_warning_' + key] || '';
+            var warningLink = warningLinks[key];
+            if (!warningLink) {
+                notice.innerText = warning;
+                return;
+            }
+            notice.innerHTML = '';
+            var content = UI.setHTML(h('span'), warning);
+            var link = content.querySelector('a');
+            if (link) {
+                link.href = warningLink;
+                link.onclick = clickHandler;
+            }
+            notice.appendChild(content);
         });
 
         var attachments, addAttachment;
+
 
         var content = [
             h('hr'),
             category,
             catContainer,
-            h('br'),
+            notice,
+            //h('br'),
             h('input.cp-support-form-title' + (title ? '.cp-hidden' : ''), {
                 placeholder: Messages.support_formTitle,
                 type: 'text',
@@ -325,13 +379,14 @@ define([
         $(answer).click(function () {
             $ticket.find('.cp-support-form-container').remove();
             $(actions).hide();
+            var hideNotice = true;
             var form = makeForm(ctx, function () {
                 var sent = sendForm(ctx, content.id, form, content.sender);
                 if (sent) {
                     $(actions).css('display', '');
                     $(form).remove();
                 }
-            }, content.title);
+            }, content.title, hideNotice);
             $ticket.append(form);
         });
 
@@ -459,8 +514,8 @@ define([
         ui.sendForm = function (id, form, dest) {
             return sendForm(ctx, id, form, dest);
         };
-        ui.makeForm = function (cb, title) {
-            return makeForm(ctx, cb, title);
+        ui.makeForm = function (cb, title, hideNotice) {
+            return makeForm(ctx, cb, title, hideNotice);
         };
         ui.makeCategoryDropdown = function (container, onChange, all) {
             return makeCategoryDropdown(ctx, container, onChange, all);
@@ -474,6 +529,10 @@ define([
         ui.makeCloseMessage = function (content, hash) {
             return makeCloseMessage(ctx, content, hash);
         };
+        ui.getDebuggingData = function (data) {
+            return getDebuggingData(ctx, data);
+        };
+
         return ui;
     };
 

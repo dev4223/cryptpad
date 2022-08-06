@@ -62,7 +62,6 @@ define([
         }
         var configTb = {
             displayed: displayed,
-            //hideDisplayName: true,
             $container: $bar,
             metadataMgr: metadataMgr,
             sfCommon: common,
@@ -157,6 +156,7 @@ define([
             return;
         }
 
+        common.setTabTitle(Messages.uploadButton);
         // we're in upload mode
         if (!common.isLoggedIn()) {
             UI.removeLoadingScreen();

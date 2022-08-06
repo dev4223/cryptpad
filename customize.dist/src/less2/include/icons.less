@@ -11,6 +11,7 @@
         padding-top: 5px;
         padding-bottom: 5px;
         border: 1px solid transparent;
+        border-radius: @variables_radius;
 
         .cp-icons-name {
             width: 100%;
@@ -37,6 +38,15 @@
             &.listonly {
                 display: none;
             }
+        }
+
+        &.cp-app-hidden {
+            display: none !important;
+        }
+        &.cp-app-disabled {
+            cursor: not-allowed !important;
+            .fa, .cptools { cursor: not-allowed !important; }
+            opacity: 0.5;
         }
     }
 }

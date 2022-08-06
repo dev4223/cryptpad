@@ -134,8 +134,9 @@ define([
     };
 
 
-
     var getCalendars = function () {
+        var LOOKUP = {};
+        var TEAMS = {};
         return Object.keys(APP.calendars).map(function (id) {
             var c = APP.calendars[id];
             if (c.hidden || c.restricted || c.loading) { return; }
@@ -149,7 +150,23 @@ define([
                 dragBgColor: md.color,
                 borderColor: md.color,
             };
-        }).filter(Boolean);
+        }).filter(Boolean).map(function (obj) {
+            var id = obj.id;
+            var cal = APP.calendars[id];
+            var team = cal.teams.sort()[0] || cal.roTeams.sort()[0];
+            var title = Util.find(cal, ['content', 'metadata', 'title']) || '';
+            LOOKUP[id] = title;
+            TEAMS[id] = team;
+            return obj;
+        }).sort(function (a, b) {
+            var team1 = TEAMS[a.id];
+            var team2 = TEAMS[b.id];
+            var t1 = LOOKUP[a.id];
+            var t2 = LOOKUP[b.id];
+            return team1 > team2 ? 1 :
+                    (team1 < team2 ? -1 : (
+                        t1 > t2 ? 1 : (t1 < t2 ? -1 : 0)));
+        });
     };
     var getSchedules = function () {
         var s = [];
@@ -513,7 +530,8 @@ define([
                         options: types, // Entries displayed in the menu
                         isSelect: true,
                         initialValue: '.ics',
-                        common: common
+                        common: common,
+                        buttonCls: 'btn',
                     };
                     var $select = UIElements.createDropdown(dropdownConfig);
                     UI.prompt(Messages.exportPrompt,
@@ -566,7 +584,7 @@ define([
                 attributes: {
                     'class': 'fa fa-trash-o',
                 },
-                content: h('span', Messages.kanban_delete),
+                content: h('span', Messages.poll_remove),
                 action: function (e) {
                     e.stopPropagation();
                     var cal = APP.calendars[id];
@@ -586,8 +604,9 @@ define([
                         }, function (err) {
                             if (err) {
                                 console.error(err);
-                                UI.warn(Messages.error);
+                                return void UI.warn(Messages.error);
                             }
+                            renderCalendar();
                         });
                     });
                 }
@@ -597,7 +616,7 @@ define([
             text: '',
             options: options, // Entries displayed in the menu
             common: common,
-            buttonCls: 'btn btn-cancel fa fa-ellipsis-h small'
+            buttonCls: 'btn btn-default fa fa-gear small cp-calendar-actions'
         };
         return UIElements.createDropdown(dropdownConfig)[0];
     };
@@ -658,10 +677,21 @@ define([
             $calendars.empty();
             var privateData = metadataMgr.getPrivateData();
             var filter = function (teamId) {
+                var LOOKUP = {};
                 return Object.keys(APP.calendars || {}).filter(function (id) {
                     var cal = APP.calendars[id] || {};
                     var teams = (cal.teams || []).map(function (tId) { return Number(tId); });
                     return teams.indexOf(typeof(teamId) !== "undefined" ? Number(teamId) : 1) !== -1;
+                }).map(function (k) {
+                    // nearly constant-time pre-sort
+                    var cal = APP.calendars[k] || {};
+                    var title = Util.find(cal, ['content', 'metadata', 'title']) || '';
+                    LOOKUP[k] = title;
+                    return k;
+                }).sort(function (a, b) {
+                    var t1 = LOOKUP[a];
+                    var t2 = LOOKUP[b];
+                    return t1 > t2 ? 1 : (t1 === t2 ? 0 : -1);
                 });
             };
             var tempCalendars = filter(0);
@@ -717,12 +747,12 @@ define([
                 editCalendar();
             }).appendTo($newContainer);
 
-            Object.keys(privateData.teams).forEach(function (teamId) {
+            Object.keys(privateData.teams).sort().forEach(function (teamId) {
                 var calendars = filter(teamId);
                 if (!calendars.length) { return; }
                 var team = privateData.teams[teamId];
                 var avatar = h('span.cp-avatar');
-                common.displayAvatar($(avatar), team.avatar, team.displayName);
+                common.displayAvatar($(avatar), team.avatar, team.displayName || team.name);
                 APP.$calendars.append(h('div.cp-calendar-team', [
                     avatar,
                     h('span.cp-name', {title: team.name}, team.name)

@@ -161,7 +161,7 @@ define([
 
     common.makeNetwork = function (cb) {
         require([
-            '/bower_components/netflux-websocket/netflux-client.js',
+            'netflux-client',
             '/common/outer/network-config.js'
         ], function (Netflux, NetConfig) {
             var wsUrl = NetConfig.getWebsocketURL();
@@ -728,18 +728,26 @@ define([
         var optsPut = {};
         if (p.type === 'poll') { optsPut.initialState = '{}'; }
         // PPP: add password as cryptput option
-        Cryptput(hash, data.toSave, function (e) {
-            if (e) { throw new Error(e); }
-            postMessage("ADD_PAD", {
-                teamId: data.teamId,
-                href: href,
-                title: data.title,
-                path: ['template']
-            }, function (obj) {
-                if (obj && obj.error) { return void cb(obj.error); }
-                cb();
-            });
-        }, optsPut);
+        Nthen(function (w) {
+            common.getEdPublic(null, w(function (obj) {
+                if (obj && obj.error) { return; }
+                optsPut.owners = [obj];
+            }));
+        }).nThen(function () {
+            Cryptput(hash, data.toSave, function (e) {
+                if (e) { throw new Error(e); }
+                postMessage("ADD_PAD", {
+                    teamId: data.teamId,
+                    href: href,
+                    title: data.title,
+                    owners: optsPut.owners,
+                    path: ['template']
+                }, function (obj) {
+                    if (obj && obj.error) { return void cb(obj.error); }
+                    cb();
+                });
+            }, optsPut);
+        });
     };
 
     common.isTemplate = function (href, cb) {
@@ -964,7 +972,10 @@ define([
                 data.teamId = common.initialTeam;
             }
             data.forceSave = 1;
-            delete common.initialTeam;
+            //delete common.initialTeam;
+        }
+        if (data.forceOwnDrive) {
+            data.teamId = -1;
         }
         if (common.initialPath) {
             if (!data.path) {
@@ -2536,7 +2547,7 @@ define([
                     // Use the async store in the main thread if workers are not available
                     require(['/common/outer/noworker.js'], waitFor2(function (NoWorker) {
                         NoWorker.onMessage(function (data) {
-                            msgEv.fire({data: data});
+                            msgEv.fire({data: data, origin: ''});
                         });
                         postMsg = function (d) { setTimeout(function () { NoWorker.query(d); }); };
                         NoWorker.create();
@@ -2599,6 +2610,16 @@ define([
         }).nThen(function () {
             // Load the new pad when the hash has changed
             var oldHref  = document.location.href;
+
+            // remove tracking parameters from URLs
+            try {
+                var u = new URL(oldHref);
+                u.search = '';
+                if (u.href !== oldHref) {
+                    window.history.replaceState({}, window.document.title, u.href);
+                }
+            } catch (err) { console.error(err); }
+
             window.onhashchange = function (ev) {
                 if (ev && ev.reset) { oldHref = document.location.href; return; }
                 var newHref = document.location.href;

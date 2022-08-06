@@ -11,10 +11,12 @@ define([
     '/common/hyperscript.js',
     '/customize/messages.js',
     '/customize/pages.js',
+    '/bower_components/nthen/index.js',
+    '/common/media-tag.js',
 
     '/bower_components/file-saver/FileSaver.min.js',
     '/bower_components/tweetnacl/nacl-fast.min.js',
-], function ($, ApiConfig, FileCrypto, MakeBackup, Thumb, UI, UIElements, Util, Hash, h, Messages, Pages) {
+], function ($, ApiConfig, FileCrypto, MakeBackup, Thumb, UI, UIElements, Util, Hash, h, Messages, Pages, nThen, MT) {
     var Nacl = window.nacl;
     var module = {};
 
@@ -39,6 +41,21 @@ define([
         });
 
         var teamId = config.teamId;
+
+        var getFormattedUploadLimit = function (cb) {
+            common.getPinUsage(teamId, (err, data) => {
+                // sensible default?
+                if (err || !data) {
+                    return void cb(void 0, ApiConfig.maxUploadSize);
+                }
+
+                var lesser = ApiConfig.maxUploadSize;
+                var greater = ApiConfig.premiumUploadSize || lesser;
+                if (data.plan) { return void cb(void 0, Util.bytesToMegabytes(greater)); }
+
+                cb(void 0, Util.bytesToMegabytes(lesser));
+            });
+        };
 
         var queue = File.queue = {
             queue: [],
@@ -125,19 +142,19 @@ define([
             var $pb = $row.find('.cp-fileupload-table-progressbar');
             var $link = $row.find('.cp-fileupload-table-link');
 
-            var privateData = common.getMetadataMgr().getPrivateData();
-            var l = privateData.plan ? ApiConfig.premiumUploadSize : false;
-            l = l || ApiConfig.maxUploadSize || "?";
-            var maxSizeStr = Util.bytesToMegabytes(l);
+            var limit = ApiConfig.premiumUploadSize || ApiConfig.maxUploadSize;
+
             var estimate = FileCrypto.computeEncryptedSize((blob && blob.byteLength) || 0, metadata);
-            if (blob && blob.byteLength && typeof(estimate) === 'number' && typeof(l) === "number" && estimate > l) {
+            if (blob && blob.byteLength && typeof(estimate) === 'number' && typeof(limit) === "number" && estimate > limit) {
                 $pv.text(Messages.error);
                 queue.inProgress = false;
                 queue.next();
                 if (config.onError) { config.onError("TOO_LARGE"); }
-                return void UI.alert(Messages._getKey('upload_tooLargeBrief', [maxSizeStr]));
+                // If the file is too large then we need to know what the relevant limit is
+                return void getFormattedUploadLimit((err, maxSizeStr) => {
+                    UI.alert(Messages._getKey('upload_tooLargeBrief', [maxSizeStr]));
+                });
             }
-
 
             /**
              * Update progress in the download panel, for uploading a file
@@ -174,8 +191,6 @@ define([
             });
 
             onError = function (e) {
-                // TODO if we included the max upload sizes in /api/config
-                // then we could check if a file is too large without going to the server...
                 queue.inProgress = false;
                 queue.next();
 
@@ -183,7 +198,9 @@ define([
 
                 if (e === 'TOO_LARGE') {
                     $pv.text(Messages.error);
-                    return void UI.alert(Messages._getKey('upload_tooLargeBrief', [maxSizeStr]));
+                    return void getFormattedUploadLimit((err, maxSizeStr) => {
+                        UI.alert(Messages._getKey('upload_tooLargeBrief', [maxSizeStr]));
+                    });
                 }
                 if (e === 'NOT_ENOUGH_SPACE') {
                     $pv.text(Messages.upload_notEnoughSpaceBrief);
@@ -312,7 +329,8 @@ define([
             });
             return manualStore;
         };
-        var fileUploadModal = function (defaultFileName, cb) {
+
+        var fileUploadModal = function (defaultFileName, cb, preview) {
             var parsedName = /^(\.?.+?)(\.[^.]+)?$/.exec(defaultFileName) || [];
             var ext = parsedName[2] || "";
 
@@ -321,9 +339,14 @@ define([
             // Ask for name, password and owner
             var content = h('div', [
                 h('h4', Messages.upload_modal_title),
+                (preview? h('div#cp-upload-preview-container', preview): undefined),
                 UIElements.setHTML(h('label', {for: 'cp-upload-name'}),
                                    Messages._getKey('upload_modal_filename', [ext])),
                 h('input#cp-upload-name', {type: 'text', placeholder: defaultFileName, value: defaultFileName}),
+
+                h('label', {for: 'cp-upload-alt'}, Messages.upload_addOptionalAlt),
+                h('input#cp-upload-alt', {type: 'text', placeholder: Messages.upload_modal_alt, autocomplete: 'off'}),
+
                 h('label', {for: 'cp-upload-password'}, Messages.addOptionalPassword),
                 UI.passwordInput({id: 'cp-upload-password'}),
                 h('span', {
@@ -335,7 +358,8 @@ define([
                 manualStore
             ]);
 
-            $(content).find('#cp-upload-owned').on('change', function () {
+            var $content = $(content);
+            $content.find('#cp-upload-owned').on('change', function () {
                 var val = Util.isChecked($(content).find('#cp-upload-owned'));
                 if (val) {
                     $(content).find('#cp-upload-store').prop('checked', true).prop('disabled', true);
@@ -348,8 +372,9 @@ define([
                 if (!yes) { return void cb(); }
 
                 // Get the values
-                var newName = $(content).find('#cp-upload-name').val();
-                var password = $(content).find('#cp-upload-password').val() || undefined;
+                var newName = $content.find('#cp-upload-name').val();
+                var password = $content.find('#cp-upload-password').val() || undefined;
+                var alt = $content.find('#cp-upload-alt').val() || undefined;
                 var owned = Util.isChecked($(content).find('#cp-upload-owned'));
                 var forceSave = owned || Util.isChecked($(content).find('#cp-upload-store'));
 
@@ -366,7 +391,8 @@ define([
                     name: newName,
                     password: password,
                     owned: owned,
-                    forceSave: forceSave
+                    forceSave: forceSave,
+                    alt: alt,
                 });
             });
         };
@@ -436,7 +462,12 @@ define([
                 type = "text/markdown";
             }
 
+            // Can't upload folder here
+            if (!file.type && file.size%4096 === 0) { return; }
+
             var thumb;
+            var preview;
+            var alt;
             var file_arraybuffer;
             var name = file.name;
             var password;
@@ -447,6 +478,7 @@ define([
                     var metadata = {
                         name: name,
                         type: type,
+                        alt: alt,
                     };
                     if (thumb) { metadata.thumbnail = thumb; }
                     queue.push({
@@ -486,8 +518,9 @@ define([
                         password = obj.password;
                         owned = obj.owned;
                         forceSave = obj.forceSave;
+                        alt = obj.alt;
                         finish();
-                    });
+                    }, preview);
                 }
             };
 
@@ -495,11 +528,21 @@ define([
                 if (e) { console.error(e); }
                 file_arraybuffer = buffer;
                 if (!Thumb.isSupportedType(file)) { return getName(); }
-                // make a resized thumbnail from the image..
-                Thumb.fromBlob(file, function (e, thumb64) {
-                    if (e) { console.error(e); }
-                    if (!thumb64) { return getName(); }
-                    thumb = thumb64;
+                nThen(function (w) {
+                    // make a resized thumbnail from the image..
+                    Thumb.fromBlob(file, w(function (e, thumb64) {
+                        if (e) { console.error(e); }
+                        if (!thumb64) { return; }
+                        thumb = thumb64;
+                    }));
+                    if (file.type === "application/pdf") { return; }
+                    MT.preview(file, {
+                        type: file.type,
+                    }, void 0, w(function (err, el) {
+                        if (err) { return void console.error(err); }
+                        preview = el;
+                    }));
+                }).nThen(function () {
                     getName();
                 });
             });
@@ -636,6 +679,10 @@ define([
             var updateDecryptProgress = function (progressValue) {
                 var text = Math.round(progressValue * 100) + '%';
                 text += progressValue === 1 ? '' : ' (' + Messages.download_step2 + '...)';
+                if (progressValue === 2) {
+                    text = Messages.download_step3;
+                    progressValue = 1;
+                }
                 $pv.text(text);
                 $pb.css({
                     width: (progressValue * 100) + '%'
@@ -669,7 +716,7 @@ define([
             var ctx = {
                 fileHost: privateData.fileHost,
                 get: common.getPad,
-                sframeChan: sframeChan,
+                sframeChan: common.getSframeChannel(),
                 cache: common.getCache()
             };
 

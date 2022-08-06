@@ -25,6 +25,7 @@ define([
     '/common/common-interface.js',
     '/common/common-feedback.js',
     '/common/common-language.js',
+    '/common/common-constants.js',
     '/bower_components/localforage/dist/localforage.min.js',
     '/common/hyperscript.js',
 ], function (
@@ -53,6 +54,7 @@ define([
     UI,
     Feedback,
     Language,
+    Constants,
     localForage,
     h
 ) {
@@ -235,9 +237,6 @@ define([
         };
     };
 
-    funcs.getAuthorId = function () {
-    };
-
     var authorUid = function(existing) {
         if (!Array.isArray(existing)) { existing = []; }
         var n;
@@ -249,11 +248,25 @@ define([
         if (existing.indexOf(n) !== -1) { n = 0; }
         return n;
     };
-    funcs.getAuthorId = function(authors, curve) {
+    funcs.getAuthorId = function(authors, curve, tokenId) {
         var existing = Object.keys(authors || {}).map(Number);
-        if (!funcs.isLoggedIn()) { return authorUid(existing); }
-
         var uid;
+        var loggedIn = funcs.isLoggedIn();
+        if (!loggedIn && !tokenId) { return authorUid(existing); }
+        if (!loggedIn) {
+            existing.some(function (id) {
+                var author = authors[id];
+                if (!author || author.uid !== tokenId) { return; }
+                uid = Number(id);
+                return true;
+            });
+            return uid || authorUid(existing);
+        }
+        // TODO this should check for a matching curvePublic / uid if:
+        // 1. you are logged in OR
+        // 2. you have a token
+        // so that users that register recognize comments from before
+        // they registered as their own (same uid)
         existing.some(function(id) {
             var author = authors[id] || {};
             if (author.curvePublic !== curve) { return; }
@@ -649,6 +662,9 @@ define([
         });
     };
 
+    funcs.openDirectly = function () {
+        ctx.sframeChan.event('EV_OPEN_URL_DIRECTLY');
+    };
     funcs.gotoURL = function (url) { ctx.sframeChan.event('EV_GOTO_URL', url); };
     funcs.openURL = function (url) { ctx.sframeChan.event('EV_OPEN_URL', url); };
     funcs.getBounceURL = function (url) {
@@ -718,6 +734,12 @@ define([
                 ApiConfig.adminKeys.indexOf(privateData.edPublic) !== -1;
     };
 
+    funcs.checkRestrictedApp = function (app) {
+        var ea = Constants.earlyAccessApps;
+        var priv = ctx.metadataMgr.getPrivateData();
+        return Util.checkRestrictedApp(app, AppConfig, ea, priv.plan, priv.loggedIn);
+    };
+
     funcs.mailbox = {};
 
     Object.freeze(funcs);
@@ -743,7 +765,7 @@ define([
                 msgEv.fire(msg);
             });
             var postMsg = function (data) {
-                iframe.postMessage(data, '*');
+                iframe.postMessage(data, ApiConfig.httpUnsafeOrigin);
             };
             SFrameChannel.create(msgEv, postMsg, waitFor(function (sfc) { ctx.sframeChan = sfc; }));
         }).nThen(function (waitFor) {
@@ -896,6 +918,22 @@ define([
                     }, {forefront: true});
                     return;
                 }
+                var blocked = privateData.premiumOnly && privateData.isNewFile;
+                if (blocked) {
+                    var domain = ApiConfig.httpUnsafeOrigin || 'CryptPad';
+                    if (/^http/.test(domain)) { domain = domain.replace(/^https?\:\/\//, ''); }
+                    UI.errorLoadingScreen(Messages._getKey('premiumOnly', [domain]), null, function () {
+                        funcs.gotoURL('/drive/');
+                    }, {forefront: true});
+                    return;
+                }
+                if (privateData.earlyAccessBlocked) {
+                    UI.errorLoadingScreen(Messages.earlyAccessBlocked, null, function () {
+                        funcs.gotoURL('/drive/');
+                    }, {forefront: true});
+                    return;
+
+                }
             } catch (e) {
                 console.error("Can't check permissions for the app");
             }
@@ -921,9 +959,10 @@ define([
             });
 
             ctx.sframeChan.on('EV_WORKER_TIMEOUT', function () {
-                UI.errorLoadingScreen(Messages.timeoutError, false, function () { // XXX 4.11.0 mobile users can't necessarily hit 'ESC' as this message suggests. provice a click option
-                    funcs.gotoURL('');
-                });
+                var message = UI.setHTML(h('span'), Messages.timeoutError);
+                var cb = Util.once(function () { funcs.gotoURL(''); });
+                $(message).find('em').on('touchend', cb);
+                UI.errorLoadingScreen(message, false, cb);
             });
 
             ctx.sframeChan.on('EV_CHROME_68', function () {
