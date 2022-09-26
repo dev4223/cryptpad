@@ -1167,7 +1167,7 @@ define([
         return h('span', [
             " See ",
             h('a', {
-                href: href || 'https://docs.cryptpad.fr/en/admin_guide/customization.html#application-config',
+                href: href || 'https://docs.cryptpad.org/en/admin_guide/customization.html#application-config',
                 target: "_blank",
                 rel: 'noopener noreferrer',
             }, "the relevant documentation"),
@@ -1178,7 +1178,7 @@ define([
     };
 
     var TERMS_DOCS_LINK = function (key) {
-        return APPCONFIG_DOCS_LINK(key, 'https://docs.cryptpad.fr/en/admin_guide/customization.html#links-to-terms-of-service-privacy-policy-and-imprint-pages');
+        return APPCONFIG_DOCS_LINK(key, 'https://docs.cryptpad.org/en/admin_guide/customization.html#links-to-terms-of-service-privacy-policy-and-imprint-pages');
     };
 
     var isValidInfoURL = function (url) {
@@ -1417,6 +1417,55 @@ define([
                 return (val && typeof(val) === 'object' && typeof(val.default) === 'string' && val.default.trim());
             });
             return void cb(good || Instance);
+        });
+    });
+
+    [
+        '/',
+        '/index.html',
+        '/contact.html',
+        '/code/',
+        '/pad/index.html',
+    ].forEach(url => {
+        assert(function (cb, msg) {
+            try {
+                url = new URL(url, ApiConfig.httpUnsafeOrigin).href;
+            } catch (err) {
+                console.error(err);
+            }
+
+            Tools.common_xhr(url, xhr => {
+                xhr.done(res => {
+                    var dom = new DOMParser().parseFromString(res, 'text/html');
+                    var sels = [
+                        'og:url',
+                        'og:type',
+                        'og:title',
+                        'og:description',
+                        'og:image',
+                        'twitter:card',
+                    ];
+                    var missing = [];
+                    sels.forEach(sel => {
+                        var selector = `meta[property="${sel}"]`;
+                        var el = dom.querySelector(selector);
+                        if (!el) { missing.push(selector); }
+                    });
+                    if (!missing.length) { return void cb(true); }
+
+                    setWarningClass(msg);
+                    msg.appendChild(h('span', [
+                        h('p', [
+                            link(url, url),
+                            ' is missing several attributes which provide better previews on social media sites and messengers. ',
+                            "The administrator of this instance can generate them with ", code('npm run build'), '.',
+                        ]),
+                        h('p', "Missing attributes: "),
+                        h('ul', missing.map(q => h('li', h('code', q)))),
+                    ]));
+                    cb(false);
+                });
+            });
         });
     });
 
