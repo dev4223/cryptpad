@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 define([
     'jquery',
     '/api/config',
@@ -10,10 +14,14 @@ define([
     '/common/hyperscript.js',
     '/common/clipboard.js',
     '/customize/messages.js',
-    '/bower_components/nthen/index.js',
+    '/components/nthen/index.js',
     '/customize/pages.js',
+    '/common/common-icons.js',
+
+    '/components/file-saver/FileSaver.min.js',
+    '/lib/qrcode.min.js',
 ], function ($, ApiConfig, Util, Hash, UI, UIElements, Feedback, Modal, h, Clipboard,
-             Messages, nThen, Pages) {
+             Messages, nThen, Pages, Icons) {
     var Share = {};
 
     var embeddableApps = [
@@ -86,7 +94,7 @@ define([
         var shareButton = {
             className: 'primary cp-share-with-friends',
             name: Messages.share_withFriends,
-            iconClass: '.fa.fa-shhare-alt',
+            iconClass: 'share',
             onClick: function () {
                 var href;
                 nThen(function (waitFor) {
@@ -257,47 +265,35 @@ define([
         });
         return teams;
     };
-    var makeBurnAfterReadingUrl = function (common, href, channel, cb) {
-        var keyPair = Hash.generateSignPair();
-        var parsed = Hash.parsePadUrl(href);
-        var newHref = parsed.getUrl({
+    const makeBurnAfterReadingUrl = (common, href, channel, opts, cb) => {
+        const keyPair = Hash.generateSignPair();
+        const parsed = Hash.parsePadUrl(href);
+        const newHref = parsed.getUrl({
             ownerKey: keyPair.safeSignKey
         });
-        var sframeChan = common.getSframeChannel();
-        var rtChannel;
-        nThen(function (waitFor) {
-            if (parsed.type !== "sheet") { return; }
-            common.getPadAttribute('rtChannel', waitFor(function (err, chan) {
-                rtChannel = chan;
-            }));
-        }).nThen(function (waitFor) {
+        const sframeChan = common.getSframeChannel();
+        const priv = common.getMetadataMgr().getPrivateData();
+        const { otherChan } = Modal.getOtherChans(priv, opts);
+        nThen((waitFor) => {
             sframeChan.query('Q_SET_PAD_METADATA', {
                 channel: channel,
+                channels: otherChan,
                 command: 'ADD_OWNERS',
                 value: [keyPair.validateKey]
-            }, waitFor(function (err) {
+            }, waitFor((err) => {
                 if (err) {
                     waitFor.abort();
                     UI.warn(Messages.error);
                 }
             }));
-            if (rtChannel) {
-                sframeChan.query('Q_SET_PAD_METADATA', {
-                    channel: rtChannel,
-                    command: 'ADD_OWNERS',
-                    value: [keyPair.validateKey]
-                }, waitFor(function (err) {
-                    if (err) { console.error(err); }
-                }));
-            }
-        }).nThen(function () {
+        }).nThen(() => {
             cb(newHref);
         });
     };
 
     var makeFaqLink = function (opts) {
         var link = h('span', [
-            h('i.fa.fa-question-circle'),
+            Icons.get('help'),
             h('a', {href: '#'}, Messages.passwordFaqLink)
         ]);
         $(link).click(function () {
@@ -348,7 +344,7 @@ define([
         // Show alert if the pad is password protected
         if (opts.hasPassword) {
             $contactsContent.append(h('div.alert.alert-primary', [
-                h('i.fa.fa-unlock'),
+                Icons.get('access'),
                 Messages.share_contactPasswordAlert, h('br'),
                 makeFaqLink(opts)
             ]));
@@ -378,18 +374,18 @@ define([
             h('label', Messages.sharedFolders_share),
             h('br'),
         ] : [
-            UI.createCheckbox('cp-share-embed', Messages.share_linkEmbed, false, { mark: {tabindex:1} }),
+            UI.createCheckbox('cp-share-embed', Messages.share_linkEmbed, false, { mark: {tabindex:0} }),
         ];
 
         if (opts.static) { linkContent = []; }
 
         linkContent.push(h('div.cp-spacer'));
-        linkContent.push(UI.dialog.selectableArea('', { id: 'cp-share-link-preview', tabindex: 1, rows:3}));
+        linkContent.push(UI.dialog.selectableArea('', { id: 'cp-share-link-preview', tabindex: 0, rows:3}));
 
         // Show alert if the pad is password protected
         if (opts.hasPassword) {
             linkContent.push(h('div.alert.alert-primary', [
-                h('i.fa.fa-lock'),
+                Icons.get('lock'),
                 Messages.share_linkPasswordAlert, h('br'),
                 makeFaqLink(opts)
             ]));
@@ -400,7 +396,7 @@ define([
         // to avoid alert fatigue
         if (!opts.versionHash && !opts.static) {
             var localStore = window.cryptpadStore;
-            var dismissButton = h('span.fa.fa-times');
+            var dismissButton = h('span', [Icons.get('close')]);
             var shareLinkWarning = h('div.alert.alert-warning.dismissable',
                 { style: 'display: none;' },
                 [
@@ -436,7 +432,7 @@ define([
             !opts.sharedFolder && {
                 className: 'secondary cp-nobar',
                 name: Messages.share_linkOpen,
-                iconClass: '.fa.fa-eye',
+                iconClass: 'preview',
                 onClick: function () {
                     opts.saveValue();
                     var v = opts.getLinkValue({
@@ -453,14 +449,15 @@ define([
             }, {
                 className: 'primary cp-nobar',
                 name: Messages.share_linkCopy,
-                iconClass: '.fa.fa-link',
+                iconClass: 'link',
                 onClick: function () {
                     opts.saveValue();
                     var v = opts.getLinkValue({
                         embed: Util.isChecked($link.find('#cp-share-embed'))
                     });
-                    var success = Clipboard.copy(v);
-                    if (success) { UI.log(Messages.shareSuccess); }
+                    Clipboard.copy(v, (err) => {
+                        if (!err) { UI.log(Messages.shareSuccess); }
+                    });
                 },
                 keys: [13]
             }, {
@@ -468,7 +465,7 @@ define([
                 name:  Messages.share_bar,
                 onClick: function () {
                     var barHref = origin + pathname + '#' + (hashes.viewHash || hashes.editHash);
-                    makeBurnAfterReadingUrl(common, barHref, opts.channel, function (url) {
+                    makeBurnAfterReadingUrl(common, barHref, opts.channel, opts, function (url) {
                         opts.burnAfterReadingUrl = url;
                         opts.$rights.find('input[type="radio"]').trigger('change');
                     });
@@ -486,18 +483,72 @@ define([
         });
     };
 
+    var getQRCode = function (link) {
+        var blocker = h('div#cp-qr-blocker', Messages.share_toggleQR);
+        var $blocker = $(blocker).click(function () {
+            $blocker.toggleClass("hidden");
+        });
+
+        var qrDiv = h('div');
+
+        var container = h('div#cp-qr-container', [
+            blocker,
+            h('div#cp-qr-link-preview', qrDiv),
+        ]);
+
+        new window.QRCode(qrDiv, link);
+        return container;
+    };
+
+    Messages.share_toggleQR = "Click to toggle QR code visibility"; // NEXT
+    var getQRTab = function (Env, data, opts, _cb) {
+        var qr = getQRCode(opts.getLinkValue());
+
+        var link = h('div.cp-share-modal', [
+            h('span#cp-qr-target', qr),
+        ]);
+
+        var buttons = [
+            makeCancelButton(),
+            {
+                className: 'primary cp-bar',
+                name: Messages.share_bar,
+                onClick: function () {
+                    UI.warn("OOPS: NOT IMPLEMENTED"); // NEXT
+                    return true;
+                },
+            },
+            {
+                className: 'primary cp-nobar',
+                name: Messages.download_dl,
+                iconClass: 'download',
+                onClick: function () {
+                    qr.querySelector('canvas').toBlob(blob => {
+                        var name = Util.fixFileName((opts.title || 'document') + '-qr.png');
+                        window.saveAs(blob, name);
+                    });
+                },
+            },
+        ];
+
+        return _cb(void 0, {
+            content: link,
+            buttons: buttons,
+        });
+    };
+
     var getEmbedTab = function (Env, data, opts, _cb) {
         var cb = Util.once(Util.mkAsync(_cb));
 
         var embedContent = [
             h('p', Messages.viewEmbedTag),
-            UI.dialog.selectableArea(opts.getEmbedValue(), { id: 'cp-embed-link-preview', tabindex: 1, rows: 3})
+            UI.dialog.selectableArea(opts.getEmbedValue(), { id: 'cp-embed-link-preview', tabindex: 0, rows: 3})
         ];
 
         // Show alert if the pad is password protected
         if (opts.hasPassword) {
             embedContent.push(h('div.alert.alert-primary', [
-                h('i.fa.fa-lock'), ' ',
+                Icons.get('lock'), ' ',
                 Messages.share_embedPasswordAlert, h('br'),
                 makeFaqLink(opts)
             ]));
@@ -508,12 +559,13 @@ define([
             {
                 className: 'primary',
                 name: Messages.share_linkCopy,
-                iconClass: '.fa.fa-link',
+                iconClass: 'link',
                 onClick: function () {
                     Feedback.send('SHARE_EMBED');
                     var v = opts.getEmbedValue();
-                    var success = Clipboard.copy(v);
-                    if (success) { UI.log(Messages.shareSuccess); }
+                    Clipboard.copy(v, (err) => {
+                        if (!err) { UI.log(Messages.shareSuccess); }
+                    });
                 },
                 keys: [13]
         }];
@@ -548,26 +600,27 @@ define([
             labelEdit = Messages.share_formEdit;
             labelView = Messages.share_formView;
             auditor = UI.createRadio('accessRights', 'cp-share-form', Messages.share_formAuditor, false, {
-                mark: {tabindex:1},
+                mark: {tabindex:0},
             });
         }
 
         var burnAfterReading = (hashes.viewHash && canBAR) ?
                     UI.createRadio('accessRights', 'cp-share-bar', Messages.burnAfterReading_linkBurnAfterReading, false, {
-                        mark: {tabindex:1},
+                        mark: {tabindex:0},
                         label: {style: "display: none;"}
                     }) : undefined;
         var rights = h('div.msg.cp-inline-radio-group', [
-            h('label', Messages.share_linkAccess),
+            h('label',{ for: 'cp-share-editable-true' }, Messages.share_linkAccess),
             h('div.radio-group',[
             UI.createRadio('accessRights', 'cp-share-editable-false',
-                            labelView, true, { mark: {tabindex:1} }),
+                            labelView, true, { mark: {tabindex:0} }),
             canPresent ? UI.createRadio('accessRights', 'cp-share-present',
                             Messages.share_linkPresent, false, { mark: {tabindex:1} }) : undefined,
             UI.createRadio('accessRights', 'cp-share-editable-true',
-                            labelEdit, false, { mark: {tabindex:1} }),
+                            labelEdit, false, { mark: {tabindex:0} }),
             auditor]),
             burnAfterReading,
+
         ]);
 
         // Burn after reading
@@ -620,7 +673,7 @@ define([
             if (burnAfterReading && !opts.burnAfterReadingUrl) {
                 if (cb) { // Called from the contacts tab, "share" button
                     var barHref = origin + pathname + '#' + (hashes.viewHash || hashes.editHash);
-                    return makeBurnAfterReadingUrl(common, barHref, channel, function (url) {
+                    return makeBurnAfterReadingUrl(common, barHref, channel, opts, function (url) {
                         cb(url);
                     });
                 }
@@ -630,6 +683,9 @@ define([
                                                                        : hashes.viewHash;
             if (formAuditor && opts.auditorHash) {
                 hash = opts.auditorHash;
+                if (opts.hasPassword) {
+                    hash += '/p';
+                }
             }
             var href = burnAfterReading ? opts.burnAfterReadingUrl
                                              : (origin + pathname + '#' + hash);
@@ -642,14 +698,17 @@ define([
             });
             return '<iframe src="' + url + '"></iframe>';
         };
-
         // disable edit share options if you don't have edit rights
         if (versionHash) {
             $rights.find('#cp-share-editable-false').attr('checked', true);
             $rights.find('#cp-share-present').removeAttr('checked').attr('disabled', true);
             $rights.find('#cp-share-editable-true').removeAttr('checked').attr('disabled', true);
         } else if (!hashes.editHash) {
-            $rights.find('#cp-share-editable-false').attr('checked', true);
+            if (opts.auditorHash) {
+                $rights.find('#cp-share-editable-false').attr('checked', false).attr('disabled', true);
+            } else {
+                $rights.find('#cp-share-editable-false').attr('checked', true);
+            }
             $rights.find('#cp-share-editable-true').removeAttr('checked').attr('disabled', true);
         } else if (!hashes.viewHash) {
             $rights.find('#cp-share-editable-false').removeAttr('checked').attr('disabled', true);
@@ -666,12 +725,17 @@ define([
         var getEmbed = function () {
             return $rights.parent().find('#cp-embed-link-preview');
         };
+        var getQR = function () {
+            return $rights.parent().find('#cp-qr-target');
+        };
 
         // update values for link and embed preview when radio btns change
         $rights.find('input[type="radio"]').on('change', function () {
-            getLink().val(opts.getLinkValue({
+            var link = opts.getLinkValue({
                 embed: Util.isChecked($('.alertify').find('#cp-share-embed'))
-            }));
+            });
+
+            getLink().val(link);
             // Hide or show the burn after reading alert
             if (Util.isChecked($rights.find('#cp-share-bar')) && !opts.burnAfterReadingUrl) {
                 $('.cp-alertify-bar-selected').show();
@@ -681,6 +745,10 @@ define([
                 return;
             }
             getEmbed().val(opts.getEmbedValue());
+
+            var qr = getQRCode(opts.getLinkValue());
+            getQR().html('').append(qr);
+
             // Hide burn after reading button
             $('.alertify').find('.cp-nobar').show();
             $('.alertify').find('.cp-bar').hide();
@@ -697,7 +765,12 @@ define([
                 $rights.find('#cp-share-editable-true').prop('checked', false);
                 $rights.find('#cp-share-present').prop('checked', true);
             } else if ((val.edit === false && hashes.viewHash) || !hashes.editHash) {
-                $rights.find('#cp-share-editable-false').prop('checked', true);
+                if (opts.auditorHash) {
+                    $rights.find('#cp-share-editable-false').prop('checked', false);
+                    $rights.find('#cp-share-form').prop('checked', true);
+                } else {
+                    $rights.find('#cp-share-editable-false').prop('checked', true);
+                }
                 $rights.find('#cp-share-editable-true').prop('checked', false);
                 $rights.find('#cp-share-present').prop('checked', false);
             } else {
@@ -714,6 +787,9 @@ define([
         common.getMetadataMgr().onChange(function () {
             // "hashes" is only available is the secure "share" app
             var _hashes = common.getMetadataMgr().getPrivateData().hashes;
+            const h = _hashes.editHash || _hashes.viewHash;
+            const c = Hash.getSecrets('pad', h, opts.password).channel;
+            if (channel !== c) { return; }
             if (!_hashes) { return; }
             hashes = _hashes;
             getLink().val(opts.getLinkValue());
@@ -721,6 +797,8 @@ define([
 
         return $rights;
     };
+
+    Messages.share_QRCategory = "QR"; // NEXT
 
     // In the share modal, tabs need to share data between themselves.
     // To do so we're using "opts" to store data and functions
@@ -771,21 +849,25 @@ define([
         var tabs = [{
             getTab: getContactsTab,
             title: Messages.share_contactCategory,
-            icon: "fa fa-address-book",
+            icon: "contacts",
             active: contactsActive,
             onShow: onShowContacts,
             onHide: resetTab
         }, {
             getTab: getLinkTab,
             title: Messages.share_linkCategory,
-            icon: "fa fa-link",
+            icon: "link",
             active: !contactsActive,
-        }];
+        }, window.CP_DEV_MODE ? { // NEXT enable for all
+            getTab: getQRTab,
+            title: Messages.share_QRCategory,
+            icon: 'qr-code',
+        } : undefined].filter(Boolean);
         if (!opts.static && ApiConfig.enableEmbedding && embeddableApps.includes(pathname)) {
             tabs.push({
                 getTab: getEmbedTab,
                 title: Messages.share_embedCategory,
-                icon: "fa fa-code",
+                icon: "code",
                 onShow: onShowEmbed,
                 onHide: resetTab
             });
@@ -801,7 +883,7 @@ define([
             // Add the versionHash warning if needed
             if (opts.versionHash) {
                 $rights.after(h('div.alert.alert-warning', [
-                    h('i.fa.fa-history'),
+                    Icons.get('history'),
                     UI.setHTML(h('span'), Messages.share_versionHash)
                 ]));
             }
@@ -824,7 +906,7 @@ define([
         // Show alert if the pad is password protected
         if (opts.hasPassword) {
             $contactsContent.append(h('div.alert.alert-primary', [
-                h('i.fa.fa-lock'),
+                Icons.get('lock'),
                 Messages.share_linkPasswordAlert, h('br'),
                 makeFaqLink(opts)
             ]));
@@ -843,14 +925,14 @@ define([
         var cb = Util.once(Util.mkAsync(_cb));
         var linkContent = [
             UI.dialog.selectableArea(opts.getLinkValue(), {
-                id: 'cp-share-link-preview', tabindex: 1, rows:2
+                id: 'cp-share-link-preview', tabindex: 0, rows:2
             })
         ];
 
         // Show alert if the pad is password protected
         if (opts.hasPassword) {
             linkContent.push(h('div.alert.alert-primary', [
-                h('i.fa.fa-lock'),
+                Icons.get('lock'),
                 Messages.share_linkPasswordAlert, h('br'),
                 makeFaqLink(opts)
             ]));
@@ -858,7 +940,7 @@ define([
 
         // warning about sharing links
         var localStore = window.cryptpadStore;
-        var dismissButton = h('span.fa.fa-times');
+        var dismissButton = Icons.get('close');
         var shareLinkWarning = h('div.alert.alert-warning.dismissable',
             { style: 'display: none;' },
             [
@@ -883,14 +965,14 @@ define([
             {
                 className: 'primary',
                 name: Messages.share_linkCopy,
-                iconClass: '.fa.fa-link',
+                iconClass: 'link',
                 onClick: function () {
                     var v = opts.getLinkValue();
-                    var success = Clipboard.copy(v);
-                    if (success) { UI.log(Messages.shareSuccess);
-                }
-              },
-              keys: [13]
+                    Clipboard.copy(v, (err) => {
+                        if (!err) { UI.log(Messages.shareSuccess); }
+                    });
+                },
+                keys: [13]
             }
         ];
 
@@ -915,7 +997,7 @@ define([
         // Show alert if the pad is password protected
         if (opts.hasPassword) {
             $(embed).append(h('div.alert.alert-primary', [
-                h('i.fa.fa-lock'),
+                Icons.get('lock'),
                 Messages.share_linkPasswordAlert, h('br'),
                 makeFaqLink(opts)
             ]));
@@ -929,11 +1011,12 @@ define([
         }, {
             className: 'primary',
             name: Messages.share_mediatagCopy,
-            iconClass: '.fa.fa-link',
+            iconClass: 'link',
             onClick: function () {
                 var v = common.getMediatagFromHref(opts.fileData);
-                var success = Clipboard.copy(v);
-                if (success) { UI.log(Messages.shareSuccess); }
+                Clipboard.copy(v, (err) => {
+                    if (!err) { UI.log(Messages.shareSuccess); }
+                });
             },
             keys: [13]
         }];
@@ -968,20 +1051,21 @@ define([
         var tabs = [{
             getTab: getFileContactsTab,
             title: Messages.share_contactCategory,
-            icon: "fa fa-address-book",
+            icon: "contacts",
             active: hasFriends,
         }, {
             getTab: getFileLinkTab,
             title: Messages.share_linkCategory,
-            icon: "fa fa-link",
+            icon: "link",
             active: !hasFriends,
         }];
 
+        // NEXT add QR code generation for files
         if (ApiConfig.enableEmbedding) {
             tabs.push({
                 getTab: getFileEmbedTab,
                 title: Messages.share_embedCategory,
-                icon: "fa fa-code",
+                icon: "code",
             });
         }
 

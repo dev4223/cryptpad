@@ -1,14 +1,16 @@
-/* globals process */
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
 
 var Client = require("../../lib/client/");
-var Crypto = require("../../www/bower_components/chainpad-crypto");
+var Crypto = require("../../www/components/chainpad-crypto");
 var Mailbox = Crypto.Mailbox;
 var Nacl = require("tweetnacl/nacl-fast");
 var nThen = require("nthen");
 var Pinpad = require("../../www/common/pinpad");
 var Rpc = require("../../www/common/rpc");
 var Hash = require("../../www/common/common-hash");
-var CpNetflux = require("../../www/bower_components/chainpad-netflux");
+var CpNetflux = require("../../www/components/chainpad-netflux");
 var Util = require("../../lib/common-util");
 
 // you need more than 100 messages in the history, and you need a lastKnownHash between "50" and "length - 50"
@@ -53,16 +55,16 @@ var state = {};
 var makeCurveKeys = function () {
     var pair = Nacl.box.keyPair();
     return {
-        curvePrivate: Nacl.util.encodeBase64(pair.secretKey),
-        curvePublic: Nacl.util.encodeBase64(pair.publicKey),
+        curvePrivate: Util.encodeBase64(pair.secretKey),
+        curvePublic: Util.encodeBase64(pair.publicKey),
     };
 };
 
 var makeEdKeys = function () {
     var keys = Nacl.sign.keyPair.fromSeed(Nacl.randomBytes(Nacl.sign.seedLength));
     return {
-        edPrivate: Nacl.util.encodeBase64(keys.secretKey),
-        edPublic: Nacl.util.encodeBase64(keys.publicKey),
+        edPrivate: Util.encodeBase64(keys.secretKey),
+        edPublic: Util.encodeBase64(keys.publicKey),
     };
 };
 
@@ -145,11 +147,10 @@ var createUser = function (config, cb) {
             //wc.leave();
         }));
     }).nThen(function () {
-        user.cleanup = function (cb) {
+        user.cleanup = function (/* cb */) {
             //console.log("Destroying user");
             // TODO remove your mailbox
             user.destroy.fire();
-            cb = cb;
         };
 
         cb(void 0, user);
@@ -197,7 +198,7 @@ nThen(function  (w) {
         alice.anonRpc.send('WRITE_PRIVATE_MESSAGE', [
             alice.mailboxChannel,
             msg
-            //Nacl.util.encodeBase64(Nacl.randomBytes(128))
+            //Util.encodeBase64(Nacl.randomBytes(128))
         ], w(function (err) {
             if (err) { throw new Error(err); }
             console.log('message %s written successfully', i);

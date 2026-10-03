@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /**
  * jscolor - JavaScript Color Picker
  *
@@ -10,6 +14,8 @@
  * See usage examples at http://jscolor.com/examples/
  */
 
+// NOTE: custom changes for CryptPad:
+// - "new Function" code has been commented out for security reasons
 
 "use strict";
 
@@ -58,6 +64,7 @@ var jsc = {
 				}
 
 				var opts = {};
+/*
 				if (optsStr) {
 					try {
 						opts = (new Function ('return (' + optsStr + ')'))();
@@ -65,6 +72,7 @@ var jsc = {
 						jsc.warn('Error parsing jscolor options: ' + eParseError + ':\n' + optsStr);
 					}
 				}
+*/
 				targetElm.jscolor = new jsc.jscolor(targetElm, opts);
 			}
 		}
@@ -681,11 +689,11 @@ var jsc = {
 	dispatchFineChange : function (thisObj) {
 		if (thisObj.onFineChange) {
 			var callback;
-			if (typeof thisObj.onFineChange === 'string') {
-				callback = new Function(thisObj.onFineChange);
-			} else {
+//			if (typeof thisObj.onFineChange === 'string') {
+//				callback = new Function(thisObj.onFineChange);
+//			} else {
 				callback = thisObj.onFineChange;
-			}
+//			}
 			callback(thisObj);
 		}
 	},

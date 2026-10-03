@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 define([
     '/customize/messages.js'
 ], function (Messages) {
@@ -40,7 +44,10 @@ define([
                     }
                 }
             },
-            order: ["1", "2"]
+            order: ["1", "2"],
+            metadata: {
+                title: Messages.form_template_poll
+            }
         }
     }];
 });

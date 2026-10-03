@@ -1,7 +1,11 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 define([
     'jquery',
     'json.sortify',
-    '/bower_components/nthen/index.js',
+    '/components/nthen/index.js',
     '/common/sframe-common.js',
     '/common/sframe-app-framework.js',
     '/common/common-util.js',
@@ -12,7 +16,9 @@ define([
     '/customize/messages.js',
     '/whiteboard/colors.js',
     '/customize/application_config.js',
-    '/bower_components/chainpad/chainpad.dist.js',
+    '/components/chainpad/chainpad.dist.js',
+    '/common/common-ui-elements.js',
+    '/common/common-icons.js',
 
     '/lib/fabric.min.js',
     'less!/whiteboard/app-whiteboard.less'
@@ -30,16 +36,15 @@ define([
     Messages,
     Colors,
     AppConfig,
-    ChainPad)
+    ChainPad,
+    UIElements,
+    Icons)
 {
 
     var APP = window.APP = {
         $: $
     };
     var Fabric = APP.Fabric = window.fabric;
-
-    var verbose = function (x) { console.log(x); };
-    verbose = function () {}; // comment out to enable verbose logging
 
     var mkControls = function (framework, canvas) {
         var $pickers = $('#cp-app-whiteboard-pickers');
@@ -294,8 +299,9 @@ define([
     var mkHelpMenu = function (framework) {
         var $appContainer = $('#cp-app-whiteboard-container');
         var helpMenu = framework._.sfCommon.createHelpMenu(['whiteboard']);
+        var $helpMenuButton = UIElements.getEntryFromButton(helpMenu.button);
         $appContainer.prepend(helpMenu.menu);
-        framework._.toolbar.$drawer.append(helpMenu.button);
+        framework._.toolbar.$drawer.append($helpMenuButton);
     };
 
     // Start of the main loop
@@ -307,6 +313,8 @@ define([
         var $canvas = $('canvas');
         var $canvasContainer = $('canvas').parents('.cp-app-whiteboard-canvas-container');
         var $container = $('#cp-app-whiteboard-container');
+        $('#cp-app-whiteboard-canvas-area').show();
+        $('#cp-app-whiteboard-controls').show();
 
         // Max for old macs: 2048×1464
         // Max for IE: 8192x8192
@@ -430,19 +438,25 @@ define([
             });
 
             // Export to drive as PNG
-            framework._.sfCommon.createButton('savetodrive', true, {}).click(function () {
-                var defaultName = framework._.title.getTitle();
-                UI.prompt(Messages.exportPrompt, defaultName + '.png', function (name) {
-                    if (name === null || !name.trim()) { return; }
-                    APP.upload(name);
-                });
-            }).appendTo($drawer);
+            var $saveToDriveButton = framework._.sfCommon.createButton('savetodrive', true, {
+                callback: function () {
+                    var defaultName = framework._.title.getTitle()
+                                    || framework._.title.defaultTitle;
+                    UI.prompt(Messages.exportPrompt, defaultName + '.png', function (name) {
+                        if (name === null || !name.trim()) { return; }
+                        APP.upload(name);
+                    });
+                }
+            });
+            var $saveToDrive = UIElements.getEntryFromButton($saveToDriveButton);
+            $saveToDrive.appendTo($drawer);
+
         } else {
             framework._.sfCommon.createButton('', true, {
                 title: Messages.canvas_imageEmbed,
                 text: Messages.toolbar_insert,
                 drawer: false,
-                icon: 'fa-picture-o',
+                icon: 'file-image',
                 name: 'mediatag'
             }).click(function () {
                 $('<input>', {type:'file'}).on('change', onUpload).click();
@@ -541,22 +555,22 @@ define([
                     display: 'block',
                 }
             }, [
-                h('button#cp-app-whiteboard-clear.btn.btn-danger', Messages.canvas_clear), ' ',
+                h('button#cp-app-whiteboard-clear.btn.btn-danger', [Icons.get ('clear-canvas'), Messages.canvas_clear]), ' ',
                 h('div.cp-whiteboard-type', [
-                    h('button.btn.brush.fa.fa-paint-brush.btn-primary', {title: Messages.canvas_brush}),
-                    h('button.btn.move.fa.fa-arrows', {title: Messages.canvas_select}),
+                    h('button.btn.brush.btn-primary', {title: Messages.canvas_brush}, Icons.get('customize')),
+                    h('button.btn.move', {title: Messages.canvas_select}, Icons.get('select')),
                 ]),
                 h('div.cp-whiteboard-history', [
-                    h('button.btn.undo.fa.fa-undo', {title: Messages.undo}),
-                    h('button.btn.redo.fa.fa-repeat', {title: Messages.redo}),
+                    h('button.btn.undo', {title: Messages.undo}, Icons.get('undo')),
+                    h('button.btn.redo', {title: Messages.redo}, Icons.get('redo')),
                 ]),
                 h('div.cp-whiteboard-text', [
-                    h('button.btn.fa.fa-font')
+                    h('button.btn', Icons.get('type')),
                 ]),
-                h('button.btn.fa.fa-trash#cp-app-whiteboard-delete', {
+                h('button.btn#cp-app-whiteboard-delete', {
                     disabled: 'disabled',
                     title: Messages.canvas_delete
-                }),
+                }, Icons.get('trash-full')),
                 /*
                 h('button#cp-app-whiteboard-toggledraw.btn.btn-secondary', Messages.canvas_disable),
                 h('button#cp-app-whiteboard-toggledraw.btn.btn-secondary', Messages.canvas_disable),
@@ -621,11 +635,14 @@ define([
         }).nThen(function (waitFor) {
             require(['/lib/fabric-history.min.js'], waitFor());
 
+            $('#cp-app-whiteboard-canvas-area').css('display', 'none');
+            $('#cp-app-whiteboard-controls').css('display', 'none');
             // Framework initialization
             Framework.create({
                 patchTransformer: ChainPad.NaiveJSONTransformer,
                 toolbarContainer: '#cp-toolbar',
                 contentContainer: '#cp-app-whiteboard-canvas-area',
+                skipLink: '#cp-app-whiteboard-controls'
             }, waitFor(function (framework) {
                 andThen2(framework);
             }));

@@ -1,8 +1,12 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 require(['/api/config'], function(ApiConfig) {
     // see ckeditor_base.js getUrl()
     window.CKEDITOR_GETURL = function(resource) {
         if (resource.indexOf('/') === 0) {
-            resource = window.CKEDITOR.basePath.replace(/\/bower_components\/.*/, '') + resource;
+            resource = window.CKEDITOR.basePath.replace(/\/components\/.*/, '') + resource;
         } else if (resource.indexOf(':/') === -1) {
             resource = window.CKEDITOR.basePath + resource;
         }
@@ -20,11 +24,11 @@ require(['/api/config'], function(ApiConfig) {
         }
     };
 
-    require(['/bower_components/ckeditor/ckeditor.js']);
+    require(['/components/ckeditor/ckeditor.js']);
 });
 define([
     'jquery',
-    '/bower_components/hyperjson/hyperjson.js',
+    '/components/hyper-json/hyperjson.js',
     '/common/sframe-app-framework.js',
     '/common/cursor.js',
     //'/common/TypingTests.js',
@@ -33,7 +37,7 @@ define([
     '/pad/comments.js',
     '/pad/export.js',
     '/pad/cursor.js',
-    '/bower_components/nthen/index.js',
+    '/components/nthen/index.js',
     '/common/media-tag.js',
     '/api/config',
     '/common/common-hash.js',
@@ -41,16 +45,16 @@ define([
     '/common/common-interface.js',
     '/common/common-ui-elements.js',
     '/common/hyperscript.js',
-    '/bower_components/chainpad/chainpad.dist.js',
+    '/components/chainpad/chainpad.dist.js',
+    '/common/common-icons.js',
     //'/customize/application_config.js',
     //'/common/test.js',
 
     '/lib/diff-dom/diffDOM.js',
-    '/bower_components/file-saver/FileSaver.min.js',
+    '/components/file-saver/FileSaver.min.js',
 
     'css!/customize/src/print.css',
-    'css!/bower_components/bootstrap/dist/css/bootstrap.min.css',
-    'css!/bower_components/components-font-awesome/css/font-awesome.min.css',
+    'css!/components/bootstrap/dist/css/bootstrap.min.css',
     'less!/pad/app-pad.less'
 ], function(
     $,
@@ -71,7 +75,8 @@ define([
     UI,
     UIElements,
     h,
-    ChainPad/*,
+    ChainPad,
+    Icons/*,
     AppConfig,
     Test */
 ) {
@@ -108,7 +113,7 @@ define([
     // * Remove the drag&drop and resizers from the hyperjson
     var isWidget = function(el) {
         return typeof(el.getAttribute) === "function" &&
-            (el.getAttribute('data-cke-hidden-sel') ||
+            (el.getAttribute('data-cke-hidden-sel') || el.getAttribute('data-cke-temp') ||
                 (el.getAttribute('class') &&
                     (/cke_widget_drag/.test(el.getAttribute('class')) ||
                         /cke_image_resizer/.test(el.getAttribute('class')))
@@ -231,7 +236,7 @@ define([
                     input: { value: 1 },
                     label: { class: 'noTitle' }
                 });
-            var delWidth = h('button.btn.btn-default.fa.fa-times');
+            var delWidth = h('button.btn.btn-default', Icons.get('close'));
             var width = h('div.cp-pad-settings-radio-container', [
                 opt1,
                 opt2,
@@ -263,7 +268,7 @@ define([
                     input: { value: 1 },
                     label: { class: 'noTitle' }
                 });
-            var delOutline = h('button.btn.btn-default.fa.fa-times');
+            var delOutline = h('button.btn.btn-default', Icons.get('close'));
             var outline = h('div.cp-pad-settings-radio-container', [
                 opt3,
                 opt4,
@@ -295,7 +300,7 @@ define([
                     input: { value: 1 },
                     label: { class: 'noTitle' }
                 });
-            var delComments = h('button.btn.btn-default.fa.fa-times');
+            var delComments = h('button.btn.btn-default', Icons.get('close'));
             var comments = h('div.cp-pad-settings-radio-container', [
                 opt5,
                 opt6,
@@ -337,19 +342,23 @@ define([
             drawer: true,
             text: Messages.pad_settings_title,
             name: 'pad-settings',
-            icon: 'fa-cog',
+            icon: 'pad-settings',
         }, function () {
             UI.alert(getSettings());
         });
-        framework._.toolbar.$drawer.append($settingsButton);
+
+        var $settings = UIElements.getEntryFromButton($settingsButton);
+        framework._.toolbar.$drawer.append($settings);
+
     };
 
     var mkHelpMenu = function(framework) {
         var $toolbarContainer = $('.cke_toolbox_main');
         var helpMenu = framework._.sfCommon.createHelpMenu(['text', 'pad']);
-        $toolbarContainer.before(helpMenu.menu);
+        var $helpMenuButton = UIElements.getEntryFromButton(helpMenu.button);
 
-        framework._.toolbar.$drawer.append(helpMenu.button);
+        $toolbarContainer.before(helpMenu.menu);
+        framework._.toolbar.$drawer.append($helpMenuButton);
     };
 
     var mkDiffOptions = function(cursor, readOnly) {
@@ -414,6 +423,10 @@ define([
                     info.node.getAttribute('class') &&
                     (info.node.getAttribute('class').split(' ').indexOf('cke_widget_drag_handler') !== -1 ||
                         info.node.getAttribute('class').split(' ').indexOf('cke_image_resizer') !== -1)) {
+                    return true;
+                }
+                // CkEditor temporary data (used when copy-paste large chunks for instance)
+                if (info.node && (info.node.tagName === 'SPAN' || info.node.tagName === 'DIV') && info.diff.name === 'data-cke-temp') {
                     return true;
                 }
 
@@ -623,15 +636,17 @@ define([
             */
             editor.execCommand('print');
             framework.feedback('PRINT_PAD');
+            UI.clearTooltipsDelay();
         });
-        framework._.toolbar.$drawer.append($printButton);
+        var $print = UIElements.getEntryFromButton($printButton);
+        framework._.toolbar.$drawer.append($print);
     };
 
     var andThen2 = function(editor, Ckeditor, framework) {
         var mediaTagMap = {};
         var $contentContainer = $('#cke_1_contents');
         var $html = $('html');
-        var $faLink = $html.find('head link[href*="/bower_components/components-font-awesome/css/font-awesome.min.css"]');
+        var $faLink = $html.find('head link[href*="/components/components-font-awesome/css/font-awesome.min.css"]');
         if ($faLink.length) {
             $html.find('iframe').contents().find('head').append($faLink.clone());
         }
@@ -648,6 +663,7 @@ define([
 
         var customCss = '/customize/ckeditor-contents.css?' + window.CKEDITOR.CRYPTPAD_URLARGS;
         $iframe.find('head').append('<link href="' + customCss + '" type="text/css" rel="stylesheet" _fcktemp="true"/>');
+        $('#cp-app-pad-editor').show();
 
         framework._.sfCommon.addShortcuts(ifrWindow);
 
@@ -712,13 +728,21 @@ define([
             var href = el.getAttribute('href');
             if (/^#/.test(href)) {
                 try {
+                    var foundAnchor = false;
                     $inner.find('.cke_anchor[data-cke-realelement]').each(function (j, el) {
+                        if (foundAnchor) { return; }
                         var i = editor.restoreRealElement($(el));
                         var node = i.$;
                         if (node.id === href.slice(1)) {
                             el.scrollIntoView();
+                            foundAnchor = true;
                         }
                     });
+                    // Fallback: try to find anchor by ID directly
+                    if (!foundAnchor) {
+                        var anchorsById = $inner.find('#' + href.slice(1));
+                        if (anchorsById.length) { anchorsById[0].scrollIntoView(); }
+                    }
                 } catch (err) {}
                 return;
             }
@@ -797,8 +821,8 @@ define([
             var store = window.cryptpadStore;
             var key = 'pad-small-width';
 
-            var hideBtn = h('button.btn.btn-default.cp-pad-hide.fa.fa-compress');
-            var showBtn = h('button.btn.btn-default.cp-pad-show.fa.fa-expand');
+            var hideBtn = h('button.btn.btn-default.cp-pad-hide', Icons.get('shrink-pad'));
+            var showBtn = h('button.btn.btn-default.cp-pad-show', Icons.get('expand-pad'));
 
             var localHide;
             $(hideBtn).click(function () { // Expand
@@ -867,11 +891,11 @@ define([
                     title: Util.stripTags($(el).text())
                 });
             });
-            var hideBtn = h('button.btn.btn-default.cp-pad-hide.fa.fa-chevron-left');
+            var hideBtn = h('button.btn.btn-default.cp-pad-hide', Icons.get('chevron-left'));
             var showBtn = h('button.btn.btn-default.cp-pad-show', {
                 title: Messages.pad_tocHide
             }, [
-                h('i.fa.fa-list-ul')
+                Icons.get('list')
             ]);
             var content = [
                 hideBtn,
@@ -903,6 +927,10 @@ define([
                 $toc.addClass('hidden');
                 localHide = true;
                 if (store) { store.put(key, '1'); }
+
+                if (APP.tocScroll) {
+                    APP.tocScroll();
+                }
             });
             $(showBtn).click(function () {
                 $toc.removeClass('hidden');
@@ -922,6 +950,23 @@ define([
                     e.stopPropagation();
                     if (!obj.el || UIElements.isVisible(obj.el, $contentContainer)) { return; }
                     obj.el.scrollIntoView();
+                    var $iframe = $('iframe').contents();
+                    var onScroll = function () {
+                        APP.tocScrollOff();
+                    };
+                    APP.tocScrollOff = function () {
+                        delete APP.tocScroll;
+                        delete APP.tocScrollOff;
+                        $iframe.off('scroll', onScroll);
+                    };
+                    APP.tocScroll = function () {
+                        obj.el.scrollIntoView();
+                        APP.tocScrollOff();
+                    };
+                    //$(window).on('scroll', onScroll);
+                    setTimeout(function () {
+                        $iframe.on('scroll', onScroll);
+                    });
                 });
                 a.innerHTML = title;
                 content.push(h('p.cp-pad-toc-'+level, a));
@@ -1003,6 +1048,8 @@ define([
             if (scrollMax) {
                 $iframe.scrollTop($iframe.innerHeight());
             }
+
+            if (APP.tocScrollOff) { APP.tocScrollOff(); }
         });
 
         framework.setTextContentGetter(function() {
@@ -1017,6 +1064,8 @@ define([
             return str;
         });
         framework.setContentGetter(function() {
+            if (APP.tocScrollOff) { APP.tocScrollOff(); }
+
             $inner.find('span[data-cke-display-name="media-tag"]:empty').each(function(i, el) {
                 $(el).remove();
             });
@@ -1042,6 +1091,7 @@ define([
 
         framework.onReady(function(newPad) {
             editor.focus();
+            editor.resetUndo();
 
             if (!module.isMaximized) {
                 module.isMaximized = true;
@@ -1296,6 +1346,7 @@ define([
             Framework.create({
                 toolbarContainer: '#cp-app-pad-toolbar',
                 contentContainer: '#cp-app-pad-editor',
+                skipLink: '#cke_1_contents .cke_wysiwyg_frame|html',
                 patchTransformer: ChainPad.NaiveJSONTransformer,
                 /*thumbnail: {
                     getContainer: function () { return $('iframe').contents().find('html')[0]; },
@@ -1388,8 +1439,8 @@ define([
 */
                 Ckeditor.dom.element.prototype.setHtml = function(a){
                     if (/callFunction/.test(a)) {
-                        a = a.replace(/on(mousedown|blur|keydown|focus|click|dragstart|mouseover|mouseout)/g, function (value) {
-                            return 'o' + value;
+                        a = a.replace(/[^o]on(mousedown|blur|keydown|focus|click|dragstart|mouseover|mouseout)/g, function (value) {
+                            return value.slice(0,1) + 'o' + value.slice(1);
                         });
                     }
                     this.$.innerHTML = a;
@@ -1405,7 +1456,7 @@ define([
                 var _getPath = Ckeditor.plugins.getPath;
                 Ckeditor.plugins.getPath = function (name) {
                     if (name === 'preview') {
-                        return window.location.origin + "/bower_components/ckeditor/plugins/preview/";
+                        return window.location.origin + "/components/ckeditor/plugins/preview/";
                     }
                     return _getPath(name);
                 };
@@ -1503,6 +1554,7 @@ define([
                 $iframe.find('html').css({
                     'background-color': '#FFF'
                 });
+                $('#cp-app-pad-editor').css('display', 'none');
             }).nThen(waitFor());
 
         }).nThen(function(waitFor) {

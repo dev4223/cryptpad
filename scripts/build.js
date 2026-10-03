@@ -1,4 +1,6 @@
-/* globals process */
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
 
 var Fs = require("fs");
 var Fse = require("fs-extra");
@@ -136,6 +138,7 @@ var appIndexesToBuild = [
     'form',
     'poll',
     'whiteboard',
+    'diagram',
     'slide',
     'file',
     'calendar',
@@ -229,7 +232,7 @@ appIndexesToBuild.forEach(function (app) {
 
     write(built, `./www/${app}/index.html`);
 
-    // XXX preloading version for inner.html
+    // TODO preloading version for inner.html
 });
 
 var instance;

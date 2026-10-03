@@ -1,17 +1,23 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 define([
     'jquery',
     '/api/config',
-    '/bower_components/chainpad-crypto/crypto.js',
+    '/components/chainpad-crypto/crypto.js',
     '/common/toolbar.js',
-    '/bower_components/nthen/index.js',
+    '/components/nthen/index.js',
     '/common/sframe-common.js',
     '/common/hyperscript.js',
     '/customize/messages.js',
     '/common/common-interface.js',
+    '/common/common-ui-elements.js',
     '/common/notifications.js',
+    '/common/common-util.js',
+    '/common/common-icons.js',
 
-    'css!/bower_components/bootstrap/dist/css/bootstrap.min.css',
-    'css!/bower_components/components-font-awesome/css/font-awesome.min.css',
+    'css!/components/bootstrap/dist/css/bootstrap.min.css',
     'less!/notifications/app-notifications.less',
 ], function (
     $,
@@ -23,7 +29,10 @@ define([
     h,
     Messages,
     UI,
-    Notifications
+    UIElements,
+    Notifications,
+    Util,
+    Icons
     )
 {
     var APP = {};
@@ -67,22 +76,28 @@ define([
         var notifsPanel, notifsList, dismissAll;
         notifsPanel = h("div.cp-app-notifications-panel", [
             h('div.cp-app-notifications-panel-titlebar', [
-                h("span.cp-app-notifications-panel-title",
+                h("h5.cp-app-notifications-panel-title",
                     (Messages.notificationsPage || "Notifications") + " - " + categoryName),
                 h("div.cp-app-notifications-panel-titlebar-buttons", [
-                    dismissAll = h("div.cp-app-notifications-dismissall.cp-clickable", { title: Messages.notifications_dismissAll || "Dismiss All" }, h("span.fa.fa-trash")),
+                    dismissAll = h("div.cp-app-notifications-dismissall.cp-clickable", { tabindex: 0, title: Messages.notifications_dismissAll || "Dismiss All", 'aria-label': Messages.notifications_dismissAll || "Dismiss All", role: 'button' }, Icons.get('trash-full')),
                 ]),
             ]),
-            notifsList = h("div.cp-app-notifications-panel-list", [
+            notifsList = h("div.cp-app-notifications-panel-list", {'role': 'list', 'aria-label': (Messages.notificationsPage || "Notifications") + " " + categoryName }, [
                 h("div.cp-notification.no-notifications", Messages.notifications_empty),
             ]),
         ]);
+
+        UIElements.reorderDOM($(notifsList));
 
         // add notification
         var addNotification = function (data, el) {
             // if the type of notification correspond
             if (filterTypes.indexOf(data.content.msg.type) !== -1) {
                 notifsData.push(data);
+                var icon = $(el).find(".cp-reminder");
+                $(icon).addClass('cp-avatar-calendar');
+                $(el).attr('tabindex', -1);
+                $(el).attr('role', 'listitem');
                 $(notifsList).prepend(el);
             }
         };
@@ -101,6 +116,7 @@ define([
                 var time = new Date(data.content.time);
                 $(el).find(".cp-notification-content").append(h("span.notification-time", time.toLocaleString()));
                 $(el).addClass("cp-app-notification-archived");
+                $(el).attr('tabindex', -1);
                 if (isDataUnread) {
                     $(el).hide();
                 } else {
@@ -116,7 +132,7 @@ define([
             var loadmore;
             var lastKnownHash;
             $(dismissAll).remove();
-            loadmore = h("div.cp-app-notification-loadmore.cp-clickable", Messages.history_loadMore);
+            loadmore = h("button.cp-app-notification-loadmore.cp-clickable", Messages.history_loadMore);
             $(loadmore).click(function () {
                 common.mailbox.getNotificationsHistory('notifications', 10, lastKnownHash, function (err, messages, end) {
                     if (!Array.isArray(messages)) { return; }
@@ -139,7 +155,7 @@ define([
             $(loadmore).click();
         }
 
-        common.mailbox.subscribe(["notifications"], {
+        common.mailbox.subscribe(["notifications", "reminders"], {
             onMessage: function (data, el) {
                 addNotification(data, el);
             },
@@ -147,14 +163,17 @@ define([
                 $('.cp-app-notification-archived[data-hash="' + data.hash + '"]').css('display', 'flex');
             }
         });
-
-        $(dismissAll).click(function () {
+        const handler = function () {
+            if (!notifsData) {
+                return;
+            }
             notifsData.forEach(function (data) {
                 if (data.content.isDismissible) {
                     data.content.dismissHandler();
                 }
             });
-        });
+        };
+        Util.onClickEnter($(dismissAll), handler, { space: true });
 
         return $div;
     };
@@ -192,23 +211,29 @@ define([
         });
     };
     var createLeftside = function () {
-        var $categories = $('<div>', {'class': 'cp-sidebarlayout-categories'})
+        var $categories = $('<div>', {'class': 'cp-sidebarlayout-categories', 'role': 'menu' })
                             .appendTo(APP.$leftside);
         var metadataMgr = common.getMetadataMgr();
         var privateData = metadataMgr.getPrivateData();
         var active = privateData.category || 'all';
         common.setHash(active);
         Object.keys(categories).forEach(function (key) {
-            var $category = $('<div>', {'class': 'cp-sidebarlayout-category'}).appendTo($categories);
-            if (key === 'all') { $category.append($('<span>', {'class': 'fa fa-bars'})); }
-            if (key === 'friends') { $category.append($('<span>', {'class': 'fa fa-user'})); }
-            if (key === 'pads') { $category.append($('<span>', {'class': 'cptools cptools-richtext'})); }
-            if (key === 'archived') { $category.append($('<span>', {'class': 'fa fa-archive'})); }
+            var name = Messages['notifications_cat_'+key] || key;
+            var $category = $('<div>', {'class': 'cp-sidebarlayout-category', 'tabindex': 0, 'role': 'menuitem', 'aria-label': name}).appendTo($categories);
+            if (key === 'all') { $category.append($(Icons.get('all'))); }
+            if (key === 'friends') { $category.append($(Icons.get('contacts-book'))); }
+            if (key === 'pads') { $category.append($(Icons.get('file-pad'))); }
+            if (key === 'archived') { $category.append($(Icons.get('history'))); }
 
             if (key === active) {
                 $category.addClass('cp-leftside-active');
             }
 
+            $category.keydown(function (e) {
+                if (e.keyCode === 13) {
+                    $category.click();
+                }
+            });
             $category.click(function () {
                 if (!Array.isArray(categories[key]) && categories[key].onClick) {
                     categories[key].onClick();
@@ -221,7 +246,7 @@ define([
                 showCategories(categories[key]);
             });
 
-            $category.append(Messages['notifications_cat_'+key] || key);
+            $category.append(h('span.cp-sidebarlayout-category-name', name));
         });
         showCategories(categories[active]);
     };
@@ -234,6 +259,7 @@ define([
             $container: APP.$toolbar,
             pageTitle: Messages.notificationsPage || 'Notifications',
             metadataMgr: common.getMetadataMgr(),
+            skipLink: '#cp-sidebarlayout-container',
         };
         APP.toolbar = Toolbar.create(configTb);
         APP.toolbar.$rightside.hide();
@@ -268,7 +294,6 @@ define([
         }
 
         createLeftside();
-
         UI.removeLoadingScreen();
 
     });

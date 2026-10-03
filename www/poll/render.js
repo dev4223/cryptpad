@@ -1,13 +1,18 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 define([
     'jquery',
-    '/bower_components/hyperjson/hyperjson.js',
+    '/components/hyper-json/hyperjson.js',
     '/common/text-cursor.js',
-    '/bower_components/chainpad/chainpad.dist.js',
+    '/components/chainpad/chainpad.dist.js',
     '/common/common-util.js',
     '/customize/messages.js',
+    '/common/common-icons.js',
 
     '/lib/diff-dom/diffDOM.js',
-], function ($, Hyperjson, TextCursor, ChainPad, Util, Messages) {
+], function ($, Hyperjson, TextCursor, ChainPad, Util, Messages, Icons) {
     var DiffDOM = window.diffDOM;
 
     var Example = {
@@ -289,8 +294,8 @@ var Renderer = function (APP) {
         return ['SPAN', {
             'data-rt-id': id,
             'title': Messages.poll_locked,
-            class: 'cp-app-poll-table-lock fa fa-lock',
-        }, []];
+            class: 'cp-app-poll-table-lock',
+        }, [Icons.get('lock')]];
     };
 
     var makeBookmarkElement = Render.makeBookmarkElement = function (id) {
@@ -298,8 +303,8 @@ var Renderer = function (APP) {
             'data-rt-id': id,
             'title': Messages.poll_bookmark_col,
             'style': 'visibility: hidden;',
-            class: 'cp-app-poll-table-bookmark fa fa-thumb-tack',
-        }, []];
+            class: 'cp-app-poll-table-bookmark',
+        }, [Icons.get('pin')]];
     };
 
     var makeHeadingCell = Render.makeHeadingCell = function (cell, readOnly) {

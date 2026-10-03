@@ -1,6 +1,10 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Load #1, load as little as possible because we are in a race to get the loading screen up.
 define([
-    '/bower_components/nthen/index.js',
+    '/components/nthen/index.js',
     '/api/config',
     'jquery',
     '/common/requireconfig.js',
@@ -32,19 +36,17 @@ define([
     }).nThen(function (waitFor) {
         SFCommonO.initIframe(waitFor);
     }).nThen(function (/*waitFor*/) {
-        var hash = localStorage[Constants.userHashKey] || localStorage[Constants.fileHashKey];
-        var drive = hash && ('#'+hash === window.location.hash);
+        var isDrive = false;
         if (!window.location.hash) {
-            drive = true;
-            window.location.hash = hash;
+            isDrive = true;
         } else {
             var p = Hash.parsePadUrl('/debug/'+window.location.hash);
             if (p && p.hashData && p.hashData.app === 'drive') {
-                drive = true;
+                isDrive = true;
             }
         }
         var addData = function (meta) {
-            meta.debugDrive = drive;
+            meta.debugDrive = isDrive;
         };
         SFCommonO.start({
             noDrive: true,

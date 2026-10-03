@@ -1,6 +1,13 @@
+/*
+ * SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
 @import (reference) "./tools.less";
 @import (reference) "./colortheme-all.less";
 @import (reference) "./variables.less";
+@import (reference) "./badges.less";
 .avatar_vars(
     @width: 30px
 ) {
@@ -16,27 +23,26 @@
     .avatar_vars(@width);
     --avatar-width: @avatar-width;
     --avatar-font-size: @avatar-font-size;
+    @badge-width: min(0.4*@width, 100px);
+    --badges-width: @badge-width;
+    --badges-offset: ceil(-1*@badge-width/5);
+    --badges-font: ceil(@badge-width*2/3);
 }
 & {
     .avatar_vars();
     &.cp-avatar {
-        overflow: hidden;
+        overflow: visible;
         text-overflow: ellipsis;
         font-size: 16px;
         display: flex;
         align-items: center;
         border-radius: @variables_radius;
+        position: relative;
         .cp-avatar-default, media-tag {
             display: inline-flex;
-
-            width: @avatar-width;
             width: var(--avatar-width);
-
-            height: @avatar-width;
             height: var(--avatar-width);
             border-radius: @variables_radius;
-
-
             justify-content: center;
             align-items: center;
             overflow: hidden;
@@ -70,6 +76,14 @@
                 max-width: none;
                 max-height: none; // To override 'media-tag img' in slide.less
             }
+        }
+        .badges_include();
+        & > span.cp-badge {
+            position: absolute;
+            z-index: 10;
+            bottom: var(--badges-offset);
+            right: var(--badges-offset);
+            border: 1px solid @cp_badges-color;
         }
     }
 }

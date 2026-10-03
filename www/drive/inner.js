@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 define([
     'jquery',
     '/common/toolbar.js',
@@ -7,14 +11,13 @@ define([
     '/common/common-interface.js',
     '/common/common-ui-elements.js',
     '/common/common-feedback.js',
-    '/bower_components/nthen/index.js',
+    '/components/nthen/index.js',
     '/common/sframe-common.js',
     '/common/proxy-manager.js',
     '/customize/application_config.js',
     '/customize/messages.js',
 
-    'css!/bower_components/bootstrap/dist/css/bootstrap.min.css',
-    'css!/bower_components/components-font-awesome/css/font-awesome.min.css',
+    'css!/components/bootstrap/dist/css/bootstrap.min.css',
     'less!/drive/app-drive.less',
 ], function (
     $,
@@ -38,7 +41,19 @@ define([
         for (var k in objRef) { delete objRef[k]; }
         $.extend(true, objRef, objToCopy);
     };
-    var updateSharedFolders = function (sframeChan, manager, drive, folders, cb) {
+    var lockoutAnonSharedFolder = function (common) {
+        APP.newSharedFolder = null;
+        APP.closed = true;
+        var msg = Messages.restrictedError;
+        if (common && !common.isLoggedIn()) {
+            msg = UIElements.loginErrorScreenContent(common);
+        }
+        setTimeout(function () {
+            UI.errorLoadingScreen(msg, false, false);
+        }, 0);
+    };
+
+    var updateSharedFoldersCore = function (common, sframeChan, manager, drive, folders, cb) {
         if (!drive || !drive.sharedFolders) {
             return void cb();
         }
@@ -54,10 +69,16 @@ define([
                     sharedFolder: fId
                 }, waitFor(function (err, newObj) {
                     if (!APP.loggedIn && APP.newSharedFolder) {
+                        if (newObj && newObj.restricted) {
+                            lockoutAnonSharedFolder(common);
+                            waitFor.abort();
+                            return;
+                        }
+                        if (err) { return; }
                         if (!newObj || !Object.keys(newObj).length) {
                             // Empty anon drive: deleted
                             var msg = Messages.deletedError + '<br>' + Messages.errorRedirectToHome;
-                            setTimeout(function () { UI.errorLoadingScreen(msg, false, function () {}); });
+                            setTimeout(function () { UI.errorLoadingScreen(msg, false, true); });
                             APP.newSharedFolder = null;
                         }
                     }
@@ -100,6 +121,11 @@ define([
             cb();
         });
     };
+    var updateSharedFolders = function (common) {
+        return function (sframeChan, manager, drive, folders, cb) {
+            updateSharedFoldersCore(common, sframeChan, manager, drive, folders, cb);
+        };
+    };
     var updateObject = function (sframeChan, obj, cb) {
         sframeChan.query('Q_DRIVE_GETOBJECT', null, function (err, newObj) {
             copyObjectValue(obj, newObj);
@@ -135,9 +161,8 @@ define([
 
     var main = function () {
         var common;
-        var proxy = {};
+        var proxy = { drive: {} };
         var folders = {};
-        var readOnly;
 
         var startOnline = false;
         var onReco;
@@ -164,11 +189,11 @@ define([
             }
             metadataMgr.onChange(function () {
                 if (typeof(metadataMgr.getPrivateData().readOnly) === 'boolean') {
-                    readOnly = APP.readOnly = metadataMgr.getPrivateData().readOnly;
+                    APP.readOnly = metadataMgr.getPrivateData().readOnly;
                     privReady();
                 }
             });
-        }).nThen(function (waitFor) {
+        }).nThen(function () {
             APP.loggedIn = common.isLoggedIn();
             if (!APP.loggedIn) { Feedback.send('ANONYMOUS_DRIVE'); }
             APP.$body = $('body');
@@ -184,10 +209,13 @@ define([
                 APP.anonSFPassword = privateData.password;
             }
 
+            /*
             var sframeChan = common.getSframeChannel();
             updateObject(sframeChan, proxy, waitFor(function () {
+                console.error('DRVE RDY');
                 updateSharedFolders(sframeChan, null, proxy.drive, folders, waitFor());
             }));
+            */
         }).nThen(function () {
             var sframeChan = common.getSframeChannel();
             var metadataMgr = common.getMetadataMgr();
@@ -196,7 +224,7 @@ define([
 
             APP.disableSF = !privateData.enableSF && AppConfig.disableSharedFolders;
             if (APP.newSharedFolder && !APP.loggedIn) {
-                readOnly = APP.readOnly = true;
+                APP.readOnly = true;
                 var data = folders[APP.newSharedFolder];
                 if (data) {
                     sframeChan.query('Q_SET_PAD_TITLE_IN_DRIVE', {
@@ -214,7 +242,8 @@ define([
                 metadataMgr: metadataMgr,
                 readOnly: privateData.readOnly,
                 sfCommon: common,
-                $container: APP.$bar
+                $container: APP.$bar,
+                skipLink: '#cp-app-drive-tree'
             };
             var toolbar = Toolbar.create(configTb);
 
@@ -275,7 +304,7 @@ define([
                 APP.$burnThisDrive = common.createButton(null, true, {
                     text: '',
                     name: 'burn-anon-drive',
-                    icon: 'fa-ban',
+                    icon: 'burn-drive',
                     tippy: Messages.fm_burnThisDriveButton,
                     drawer: false
                 }, function () {
@@ -297,7 +326,7 @@ define([
                 proxy: proxy,
                 folders: folders,
                 updateObject: updateObject,
-                updateSharedFolders: updateSharedFolders,
+                updateSharedFolders: updateSharedFolders(common),
                 history: history,
                 toolbar: toolbar,
                 APP: APP

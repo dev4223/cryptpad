@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 define([
     'jquery',
     '/customize/application_config.js',
@@ -9,12 +13,15 @@ define([
     '/common/common-util.js',
     '/common/common-feedback.js',
     '/common/inner/common-mediatag.js',
+    '/common/inner/badges.js',
     '/common/hyperscript.js',
     '/common/messenger-ui.js',
     '/customize/messages.js',
     '/customize/pages.js',
-], function ($, Config, ApiConfig, Broadcast, UIElements, UI, Hash, Util, Feedback, MT, h,
-MessengerUI, Messages, Pages) {
+    '/common/pad-types.js',
+    '/common/common-icons.js',
+], function ($, Config, ApiConfig, Broadcast, UIElements, UI, Hash, Util, Feedback, MT, Badges, h,
+MessengerUI, Messages, Pages, PadTypes, Icons) {
     var Common;
 
     var Bar = {
@@ -30,8 +37,6 @@ MessengerUI, Messages, Pages) {
     var BOTTOM_LEFT_CLS = Bar.constants.bottomL = 'cp-toolbar-bottom-left';
     var BOTTOM_MID_CLS = Bar.constants.bottomM = 'cp-toolbar-bottom-mid';
     var BOTTOM_RIGHT_CLS = Bar.constants.bottomR = 'cp-toolbar-bottom-right';
-    var LEFTSIDE_CLS = Bar.constants.leftside = 'cp-toolbar-leftside';
-    var RIGHTSIDE_CLS = Bar.constants.rightside = 'cp-toolbar-rightside';
     var FILE_CLS = Bar.constants.file = 'cp-toolbar-file';
     var DRAWER_CLS = Bar.constants.drawer = 'cp-toolbar-drawer-content';
     var HISTORY_CLS = Bar.constants.history = 'cp-toolbar-history';
@@ -88,7 +93,7 @@ MessengerUI, Messages, Pages) {
         $('<span>', {'class': USERADMIN_CLS + ' cp-dropdown-container'}).hide().appendTo($userContainer);
 
         $toolbar.append($topContainer);
-        var $bottom = $(h('div.'+BOTTOM_CLS, [
+        $(h('div.'+BOTTOM_CLS, [
             h('div.'+BOTTOM_LEFT_CLS),
             h('div.'+BOTTOM_MID_CLS),
             h('div.'+BOTTOM_RIGHT_CLS)
@@ -98,16 +103,16 @@ MessengerUI, Messages, Pages) {
 
         var $file = $toolbar.find('.'+BOTTOM_LEFT_CLS);
 
-        if (!config.hideDrawer) {
-            var $drawer = $(h('button.' + FILE_CLS, [
-                h('i.fa.fa-file-o'),
-                h('span.cp-button-name', Messages.toolbar_file)
-            ])).appendTo($file).hide();
-            var $drawerContent = $('<div>', {
-                'class': DRAWER_CLS,
-                'tabindex': 1
+        if (config.addFileMenu) {
+            var $drawer = UIElements.createDropdown({
+                text: Messages.toolbar_file,
+                options: [],
+                common: Common,
+                iconCls: 'file'
             }).hide();
-            UI.createDrawer($drawer, $drawerContent);
+            $drawer.addClass(FILE_CLS).appendTo($file);
+            $drawer.find('.cp-dropdown-content').addClass(DRAWER_CLS);
+            $drawer.find('span').addClass('cp-button-name');
         }
 
         // The 'notitle' class removes the line added for the title with a small screen
@@ -136,16 +141,14 @@ MessengerUI, Messages, Pages) {
         // Display only one time each user (if he is connected in multiple tabs)
         var uids = [];
         Object.keys(userData).forEach(function(user) {
-            //if (user !== userNetfluxId) {
                 var data = userData[user] || {};
                 var userId = data.uid;
                 if (!userId) { return; }
-                //data.netfluxId = user;
-                if (uids.indexOf(userId) === -1) {// && (!myUid || userId !== myUid)) {
+                if (user !== data.netfluxId) { return; }
+                if (uids.indexOf(userId) === -1) {
                     uids.push(userId);
                     list.push(data);
                 } else { i++; }
-            //}
         });
         return {
             list: list,
@@ -166,6 +169,7 @@ MessengerUI, Messages, Pages) {
         });
     };
     var showColors = false;
+    const validatedBadges = {};
     var updateUserList = function (toolbar, config, forceOffline) {
         if (!config.displayed || config.displayed.indexOf('userlist') === -1) { return; }
         if (toolbar.isAlone) { return; }
@@ -235,10 +239,14 @@ MessengerUI, Messages, Pages) {
         }
 
         // Update the buttons
-        var fa_editusers = '<span class="fa fa-users"></span>';
-        var fa_viewusers = numberOfViewUsers === '' ? '' : '<span class="fa fa-eye"></span>';
-        var $spansmall = $('<span>').html(fa_editusers + ' ' + numberOfEditUsers + '&nbsp;&nbsp; ' + fa_viewusers + ' ' + numberOfViewUsers);
-        $userButtons.find('.cp-dropdown-button-title').html('').append($spansmall);
+        var $editIcon = Icons.get('users');
+        var $editCount = $('<span>').text(' ' + numberOfEditUsers);
+        var $separator = $('<span>').html('&nbsp;&nbsp;');
+        var $viewIcon = numberOfViewUsers === '' ? $() : Icons.get('preview');
+        var $viewCount = numberOfViewUsers === '' ? $() : $('<span>').text(' ' + numberOfViewUsers);
+
+        var $spansmall = $('<span>').append($editIcon, $editCount, $separator, $viewIcon, $viewCount);
+        $userButtons.find('.cp-toolbar-userlist-button').empty().append($spansmall);
 
         if (!online || toolbar.isDeleted) { return; }
 
@@ -252,7 +260,7 @@ MessengerUI, Messages, Pages) {
         editUsersNames.forEach(function (data) {
             var name = data.name || Messages.anonymous;
             var safeName = Util.fixHTML(name);
-            var $span = $('<span>', {'class': 'cp-avatar'});
+            var $span = $('<span>', {'class': 'cp-userlist-entry'});
             if (data.color && showColors) {
                 $span.css('border-color', data.color);
             }
@@ -265,9 +273,9 @@ MessengerUI, Messages, Pages) {
             if (isMe && !priv.readOnly) {
                 if (!Config.disableProfile) {
                     var $button = $('<button>', {
-                        'class': 'fa fa-pencil cp-toolbar-userlist-button',
+                        'class': 'cp-toolbar-userlist-button',
                         title: Messages.user_rename
-                    }).appendTo($nameSpan);
+                    }).append(Icons.get('edit')).appendTo($nameSpan);
                     $button.hover(function (e) { e.preventDefault(); e.stopPropagation(); });
                     $button.mouseenter(function (e) {
                         e.preventDefault();
@@ -319,27 +327,27 @@ MessengerUI, Messages, Pages) {
                 && !priv.readOnly) {
                 if (pendingFriends[data.curvePublic]) {
                     $('<button>', {
-                        'class': 'fa fa-hourglass-half cp-toolbar-userlist-button',
+                        'class': 'cp-toolbar-userlist-button',
                         'title': Messages.profile_friendRequestSent
-                    }).appendTo($nameSpan);
+                    }).append(Icons.get('timer')).appendTo($nameSpan);
                 } else if (friendRequests[data.curvePublic]) {
                     $('<button>', {
-                        'class': 'fa fa-bell cp-toolbar-userlist-button',
+                        'class': ' cp-toolbar-userlist-button',
                         'data-cptippy-html': true,
                         'title': Messages._getKey('friendRequest_received', [safeName]),
-                    }).appendTo($nameSpan).click(function (e) {
+                    }).append(Icons.get('notification')).appendTo($nameSpan).click(function (e) {
                         e.stopPropagation();
                         UIElements.displayFriendRequestModal(Common, friendRequests[data.curvePublic]);
                     });
 
                 } else {
                     $('<button>', {
-                        'class': 'fa fa-user-plus cp-toolbar-userlist-button',
+                        'class': 'cp-toolbar-userlist-button',
                         'data-cptippy-html': true,
                         'title': Messages._getKey('userlist_addAsFriendTitle', [
                             safeName,
                         ])
-                    }).appendTo($nameSpan).click(function (e) {
+                    }).append(Icons.get('add-friend')).appendTo($nameSpan).click(function (e) {
                         e.stopPropagation();
                         Common.sendFriendRequest(data, function (err, obj) {
                             if (err || (obj && obj.error)) {
@@ -351,9 +359,9 @@ MessengerUI, Messages, Pages) {
                 }
             } else if (Common.isLoggedIn() && data.curvePublic && friends[data.curvePublic]) {
                 $('<button>', {
-                    'class': 'fa fa-comments-o cp-toolbar-userlist-button',
+                    'class': 'cp-toolbar-userlist-button',
                     'title': Messages.contact_chat
-                }).appendTo($nameSpan).click(function (e) {
+                }).append(Icons.get('chat')).appendTo($nameSpan).click(function (e) {
                     e.stopPropagation();
                     Common.openURL('/contacts/');
                 });
@@ -366,10 +374,51 @@ MessengerUI, Messages, Pages) {
                     Common.openURL(origin+'/profile/#' + data.profile);
                 });
             }
-            Common.displayAvatar($span, data.avatar, name, function () {
+            const spanAvatar = h('span.cp-avatar');
+            const $avatar = $(spanAvatar).prependTo($span);;
+            const onAvatar = Util.mkEvent(true);
+            Common.displayAvatar($avatar, data.avatar, name, function () {
                 $span.append($rightCol);
+                onAvatar.fire();
             }, data.uid);
             $span.data('uid', data.uid);
+            if (data.badge && data.edPublic) {
+                const addBadge = (badge) => {
+                    let i = Badges.render(badge);
+                    if (!i) { return; }
+                    onAvatar.reg(() => {
+                        $avatar.append(i);
+                    });
+                };
+                const key = data.netfluxId + '-' + data.signature + '-' + data.badge;
+                const v = validatedBadges[key];
+                if (typeof (v) === "string") {
+                    addBadge(v);
+                } else if (v === false) {
+                    if (!Badges.safeBadges.includes(data.badge)) {
+                        addBadge('error');
+                    }
+                } else {
+                    let ev = validatedBadges[key] ||= Util.mkEvent(true);
+                    ev.reg(badge => { addBadge(badge); });
+                    toolbar.badges.execCommand('CHECK_BADGE', {
+                        badge: data.badge,
+                        channel: priv.channel,
+                        ed: data.edPublic,
+                        sig: data.signature,
+                        nid: data.netfluxId
+                    }, res => {
+                        if (!res?.verified) {
+                            validatedBadges[key] = false;
+                            if (Badges.safeBadges.includes(data.badge)) { return; }
+                            return void addBadge('error');
+                        }
+                        validatedBadges[key] = res.badge;
+                        ev.fire(res.badge);
+                    });
+                }
+
+            }
             $editUsersList.append($span);
         });
 
@@ -408,7 +457,6 @@ MessengerUI, Messages, Pages) {
             e.preventDefault();
             e.stopPropagation();
         });
-        //var $closeIcon = $('<span>', {"class": "fa fa-times cp-toolbar-userlist-drawer-close"}).appendTo($content);
         $('<h2>').text(Messages.users).appendTo($content);
         $('<p>', {'class': USERLIST_CLS}).appendTo($content);
 
@@ -417,7 +465,7 @@ MessengerUI, Messages, Pages) {
         var $container = $('<span>', {id: 'cp-toolbar-userlist-drawer-open', title: Messages.userListButton});
 
         var $button = $('<button>').appendTo($container);
-        $('<span>',{'class': 'cp-dropdown-button-title'}).appendTo($button);
+        $('<span>',{'class': 'cp-toolbar-userlist-button'}).appendTo($button);
 
         toolbar.$bottomR.prepend($container);
 
@@ -460,32 +508,48 @@ MessengerUI, Messages, Pages) {
         return $container;
     };
 
-    createCollapse = function (toolbar) {
-        var up = h('i.fa.fa-chevron-up', {title: Messages.toolbar_collapse});
-        var down = h('i.fa.fa-chevron-down', {title: Messages.toolbar_expand});
+    var createCollapse = function (toolbar) {
+        var icon = Icons.get('chevron-up');
         var notif = h('span.cp-collapsed-notif');
 
-        var $button = $(h('button.cp-toolbar-collapse',[
-            up,
-            down,
-            notif
+        var $button = $(h('button.cp-toolbar-collapse', {
+                'aria-label': Messages.toolbar_collapse,
+                'title': Messages.toolbar_collapse
+            }, [
+                icon,
+                notif
         ]));
-        var $up = $(up);
-        var $down = $(down);
         toolbar.$bottomR.prepend($button);
-        $down.hide();
         $(notif).hide();
+
+        let focus;
+        $button.on('mousedown', function () {
+            focus = document.activeElement;
+        });
+
         $button.click(function () {
             toolbar.$top.toggleClass('toolbar-hidden');
             var hidden = toolbar.$top.hasClass('toolbar-hidden');
             $button.toggleClass('cp-toolbar-button-active');
-            if (hidden) {
-                $up.hide();
-                $down.show();
+
+            const newIcon = hidden ?
+                Icons.get('chevron-down'):
+                Icons.get('chevron-up');
+
+            $button.find('[data-lucide]').replaceWith(newIcon);
+            $button.attr({
+                'aria-label': hidden ? Messages.toolbar_expand : Messages.toolbar_collapse,
+                'title': hidden ? Messages.toolbar_expand : Messages.toolbar_collapse
+            });
+
+            if (!hidden) { $(notif).hide(); }
+
+            // Fix focus
+            $button.focus();
+            if (focus.nodeName === "IFRAME") {
+                $(focus.contentWindow).focus();
             } else {
-                $up.show();
-                $down.hide();
-                $(notif).hide();
+                $(focus).focus();
             }
         });
     };
@@ -501,13 +565,12 @@ MessengerUI, Messages, Pages) {
         if (!config.metadataMgr) {
             throw new Error("You must provide a `metadataMgr` to display the chat");
         }
-        if (Config.availablePadTypes.indexOf('contacts') === -1) { return; }
+        if (!PadTypes.isAvailable('contacts')) { return; }
         var $content = $('<div>', {'class': 'cp-toolbar-chat-drawer'});
         $content.on('drop dragover', function (e) {
             e.preventDefault();
             e.stopPropagation();
         });
-        //var $closeIcon = $('<span>', {"class": "fa fa-times cp-toolbar-chat-drawer-close"}).appendTo($content);
         //$('<h2>').text(Messages.users).appendTo($content);
         //$('<p>', {'class': USERLIST_CLS}).appendTo($content);
 
@@ -516,7 +579,7 @@ MessengerUI, Messages, Pages) {
         var $container = $('<span>', {id: 'cp-toolbar-chat-drawer-open'});
 
         var $button = $(h('button', [
-            h('i.fa.fa-comments'),
+            Icons.get('chat'),
             h('span.cp-button-name', Messages.chatButton)
         ])).appendTo($container);
 
@@ -579,7 +642,7 @@ MessengerUI, Messages, Pages) {
         }
 
         var $shareBlock = $(h('button.cp-toolar-share-button.cp-toolbar-button-primary', [
-            h('i.fa.fa-shhare-alt'),
+            Icons.get('share'),
             h('span.cp-button-name', Messages.shareButton)
         ]));
         Common.getSframeChannel().event('EV_SHARE_OPEN', {
@@ -613,7 +676,7 @@ MessengerUI, Messages, Pages) {
         }
 
         var $accessBlock = $(h('button.cp-toolar-access-button.cp-toolbar-button-primary', [
-            h('i.fa.fa-unlock-alt'),
+            Icons.get('access'),
             h('span.cp-button-name', Messages.accessButton)
         ]));
         $accessBlock.click(function () {
@@ -643,7 +706,7 @@ MessengerUI, Messages, Pages) {
         }
 
         var $shareBlock = $(h('button.cp-toolar-share-button.cp-toolbar-button-primary', [
-            h('i.fa.fa-shhare-alt'),
+            Icons.get('share'),
             h('span.cp-button-name', Messages.shareButton)
         ]));
         Common.getSframeChannel().event('EV_SHARE_OPEN', {
@@ -663,49 +726,6 @@ MessengerUI, Messages, Pages) {
         return $shareBlock;
     };
 
-    /*
-    var createRequest = function (toolbar, config) {
-        if (!config.metadataMgr) {
-            throw new Error("You must provide a `metadataMgr` to display the request access button");
-        }
-
-        // We can only requets more access if we're in read-only mode
-        if (config.readOnly !== 1) { return; }
-
-        var $requestBlock = $('<button>', {
-            'class': 'fa fa-lock cp-toolbar-share-button',
-            title: Messages.requestEdit_button
-        }).hide();
-
-        // If we have access to the owner's mailbox, display the button and enable it
-        // false => check if we can contact the owner
-        // true ==> send the request
-        Common.getSframeChannel().query('Q_REQUEST_ACCESS', {send:false}, function (err, obj) {
-            if (obj && obj.state) {
-                var locked = false;
-                $requestBlock.show().click(function () {
-                    if (locked) { return; }
-                    locked = true;
-                    Common.getSframeChannel().query('Q_REQUEST_ACCESS', {send:true}, function (err, obj) {
-                        if (obj && obj.state) {
-                            UI.log(Messages.requestEdit_sent);
-                            $requestBlock.hide();
-                        } else {
-                            locked = false;
-                        }
-                    });
-                });
-            }
-        });
-
-
-        toolbar.$leftside.append($requestBlock);
-        toolbar.request = $requestBlock;
-
-        return $requestBlock;
-    };
-    */
-
     var createTitle = function (toolbar, config) {
         var $titleContainer = $('<span>', {
             'class': TITLE_CLS
@@ -723,7 +743,8 @@ MessengerUI, Messages, Pages) {
 
         // Buttons
         var $text = $('<span>', {
-            'class': 'cp-toolbar-title-value'
+            'class': 'cp-toolbar-title-value',
+            tabindex: 0
         }).appendTo($hoverable);
         var $pencilIcon = $('<span>', {
             'class': 'cp-toolbar-title-edit',
@@ -742,20 +763,14 @@ MessengerUI, Messages, Pages) {
             .text('('+Messages.readonly+')'));
         var $input = $('<input>', {
             type: 'text',
-            placeholder: placeholder
+            placeholder: placeholder,
         }).appendTo($hoverable).hide();
         if (config.readOnly !== 1) {
             $text.attr("title", Messages.clickToEdit);
             $text.addClass("cp-toolbar-title-editable");
-            var $icon = $('<span>', {
-                'class': 'fa fa-pencil cp-toolbar-title-icon-readonly',
-                style: 'font-family: FontAwesome;'
-            });
+            var $icon = Icons.get('edit', {class: 'cp-toolbar-title-icon-readonly'});
             $pencilIcon.append($icon).appendTo($hoverable);
-            var $icon2 = $('<span>', {
-                'class': 'fa fa-check cp-toolbar-title-icon-readonly',
-                style: 'font-family: FontAwesome;'
-            });
+            var $icon2 = Icons.get('check', {class: 'cp-toolbar-title-icon-readonly'});
             $saveIcon.append($icon2).appendTo($hoverable);
         }
 
@@ -807,66 +822,26 @@ MessengerUI, Messages, Pages) {
             $input.val(inputVal);
             $input.show();
             $input.focus();
+            if (inputVal === $input.attr('placeholder')) {
+                // Placeholder is the default name, select text to make editing easier
+                $input.select();
+            }
             $pencilIcon.hide();
             $saveIcon.show();
         };
-        $text.on('click', displayInput);
-        $pencilIcon.on('click', displayInput);
+        $text.on('click keypress', function (event) {
+            if (event.type === 'click' || (event.type === 'keypress' && event.which === 13)) {
+                displayInput();
+            }
+        });
+        $pencilIcon.on('click keypress', function (event) {
+            if (event.type === 'click' || (event.type === 'keypress' && event.which === 13)) {
+                displayInput();
+            }
+        });
         return $titleContainer;
     };
 
-    var createUnpinnedWarning0 = function (toolbar, config) {
-        if (true) { return; } // stub this call since it won't make it into the next release
-        if (Common.isLoggedIn()) { return; }
-        var pd = config.metadataMgr.getPrivateData();
-        var o = pd.origin;
-        var cid = pd.channel;
-        Common.sendAnonRpcMsg('IS_CHANNEL_PINNED', cid, function (x) {
-            if (x.error || !Array.isArray(x.response)) { return void console.log(x); }
-            if (x.response[0] === true) {
-                $('.cp-pad-not-pinned').remove();
-                return;
-            }
-
-            if (typeof(ApiConfig.inactiveTime) !== 'number') {
-                $('.cp-pad-not-pinned').remove();
-                return;
-            }
-
-            if ($('.cp-pad-not-pinned').length) { return; }
-            var pnpTitle = Messages._getKey('padNotPinnedVariable', ['','','','', ApiConfig.inactiveTime]);
-            var pnpMsg = Messages._getKey('padNotPinnedVariable', [
-                '<a href="' + o + '/login" class="cp-pnp-login" target="blank" title>',
-                '</a>',
-                '<a href="' + o + '/register" class="cp-pnp-register" target="blank" title>',
-                '</a>',
-                ApiConfig.inactiveTime
-            ]);
-            var $msg = $('<span>', {
-                'class': 'cp-pad-not-pinned'
-            }).append([
-                $('<span>', {'class': 'fa fa-exclamation-triangle', 'title': pnpTitle}),
-                $('<span>', {'class': 'cp-pnp-msg'}).append(pnpMsg)
-            ]);
-            $msg.find('a.cp-pnp-login').click(function (ev) {
-                ev.preventDefault();
-                Common.setLoginRedirect('login');
-            });
-            $msg.find('a.cp-pnp-register').click(function (ev) {
-                ev.preventDefault();
-                Common.setLoginRedirect('register');
-            });
-            $('.cp-toolbar-top').append($msg);
-            //UI.addTooltips();
-        });
-    };
-
-    var createUnpinnedWarning = function (toolbar, config) {
-        config.metadataMgr.onChange(function () {
-            createUnpinnedWarning0(toolbar, config);
-        });
-        createUnpinnedWarning0(toolbar, config);
-    };
 
     var createPageTitle = function (toolbar, config) {
         if (!config.pageTitle) { return; }
@@ -879,11 +854,47 @@ MessengerUI, Messages, Pages) {
         var $hoverable = $('<span>', {'class': 'cp-toolbar-title-hoverable'}).appendTo($titleContainer);
 
         // Buttons
-        $('<span>', {
+        var $b = $('<span>', {
             'class': 'cp-toolbar-title-value cp-toolbar-title-value-page'
         }).appendTo($hoverable).text(config.pageTitle);
+
+        toolbar.updatePageTitle = function (title) {
+            $b.text(title);
+        };
     };
 
+    Bar.createSkipLink = function (toolbar, config) {
+        if (config.readOnly === 1) {return;}
+        const targetId = config.skipLink;
+        const $skipLink = $('<a>', {
+            'class': 'cp-toolbar-skip-link',
+            'href': targetId,
+            'tabindex': 0,
+            'text': Messages.skipLink
+        });
+        toolbar.$top.append($skipLink);
+        $skipLink.on('click', function (event) {
+            event.preventDefault();
+
+            let split = targetId.split('|'); // split for iframes
+            let $container = $('body');
+            split.some(selector => {
+                let $targetElement = $container.find(selector);
+                if ($targetElement.is('iframe')) {
+                    $container = $targetElement.contents();
+                    return;
+                }
+                const $firstFocusable = $targetElement.find('a, button, input, select, textarea, [tabindex]:not([tabindex="-1"]), [contenteditable="true"]').first();
+                if ($firstFocusable.length) {
+                    $firstFocusable.trigger('focus');
+                } else {
+                    $skipLink.hide();
+                }
+                return true;
+            });
+        });
+        return $skipLink;
+    };
     var createLinkToMain = function (toolbar, config) {
         var $linkContainer = $('<span>', {
             'class': LINK_CLS
@@ -901,12 +912,13 @@ MessengerUI, Messages, Pages) {
 
         var href = toMain ? origin+'/index.html' : origin+'/drive/';
         var buttonTitle = toMain ? Messages.header_homeTitle : Messages.header_logoTitle;
-
         var $aTag = $('<a>', {
             href: href,
             title: buttonTitle,
-            'class': "cp-toolbar-link-logo"
-        }).append(UI.getIcon(privateData.app));
+            'class': "cp-toolbar-link-logo",
+            'role': 'button',
+            'aria-label': buttonTitle
+        }).append(UI.getIcon(privateData.app)).append(Icons.get(toMain ? 'homepage' : 'drive')); //append both icons
 
         var onClick = function (e) {
             e.preventDefault();
@@ -995,7 +1007,7 @@ MessengerUI, Messages, Pages) {
     };
 
     var createLimit = function (toolbar, config) {
-        var $limitIcon = $('<span>', {'class': 'fa fa-exclamation-triangle'});
+        var $limitIcon = Icons.get('alert');
         var $limit = toolbar.$userAdmin.find('.'+LIMIT_CLS).attr({
             'title': Messages.pinLimitReached
         }).append($limitIcon).hide();
@@ -1009,18 +1021,16 @@ MessengerUI, Messages, Pages) {
             if (e) { return void console.error("Unable to get the pinned usage", e); }
             if (overLimit) {
                 $limit.show().click(function () {
-                    if (ApiConfig.allowSubscriptions && Config.upgradeURL) {
-                        var key = 'pinLimitReachedAlert'; // Msg.pinLimitReachedAlert
-                        var msg = Pages.setHTML(h('span'), Messages.pinLimitReachedAlert);
-                        $(msg).find('a').attr({
-                            target: '_blank',
-                            href: Config.upgradeURL,
-                        });
+                    let handled = false;
+                    // Msg.pinLimitReachedAlert
+                    Common.getExtensionsSync('QUOTA_REACHED').forEach(ext => {
+                        if (!ext.getAlert) { return; }
+                        handled = true;
+                        ext.getAlert();
+                    });
+                    if (handled) { return; }
 
-                        UI.alert(msg);
-                    } else {
-                        UI.alert(Messages.pinLimitReachedAlertNoAccounts);
-                    }
+                    UI.alert(Messages.pinLimitReachedAlertNoAccounts);
                 });
             }
         };
@@ -1029,20 +1039,21 @@ MessengerUI, Messages, Pages) {
         return $limit;
     };
 
-    var createNewPad = function (toolbar, config) {
+    var createNewPad = function (toolbar) {
         var $button = Common.createButton('newpad', true);
-        toolbar.$drawer.append($button);
-        return $button;
+        var $newPad = UIElements.getEntryFromButton($button);
+        toolbar.$drawer.append($newPad);
+        return $newPad;
     };
 
     var createUserAdmin = function (toolbar, config) {
         if (!config.metadataMgr) {
             throw new Error("You must provide a `metadataMgr` to display the user menu");
         }
-        var metadataMgr = config.metadataMgr;
         var $userAdmin = toolbar.$userAdmin.find('.'+USERADMIN_CLS).show();
         var userMenuCfg = {
             $initBlock: $userAdmin,
+            buttonTitle: Messages.userAccountButton,
         };
         if (!config.hideDisplayName) {
             $.extend(true, userMenuCfg, {
@@ -1055,17 +1066,12 @@ MessengerUI, Messages, Pages) {
             userMenuCfg.displayChangeName = 1;
         }
         Common.createUserAdminMenu(userMenuCfg);
-        $userAdmin.find('> button').attr({
-            title: Messages.userAccountButton,
-            alt: Messages.userAccountButton,
-        });
-
         return $userAdmin;
     };
 
-    var createMaintenance = function (toolbar, config) {
+    var createMaintenance = function (toolbar) {
         var $notif = toolbar.$top.find('.'+MAINTENANCE_CLS);
-        var button = h('button.cp-maintenance-wrench.fa.fa-wrench');
+        var button = h('button.cp-maintenance-wrench', [Icons.get('settings')]);
         $notif.append(button);
 
 
@@ -1113,64 +1119,92 @@ MessengerUI, Messages, Pages) {
 
     var createNotifications = function (toolbar, config) {
         var $notif = toolbar.$top.find('.'+NOTIFICATIONS_CLS).show();
-        var openNotifsApp = h('div.cp-notifications-gotoapp', h('p', Messages.openNotificationsApp || "Open notifications App"));
-        $(openNotifsApp).click(function () {
-            Common.openURL("/notifications/");
-        });
-        var div = h('div.cp-notifications-container', [
-            h('div.cp-notifications-empty', Messages.notifications_empty)
-        ]);
-        var pads_options = [div];
+
+        var options = [];
+
+        if (Common.isLoggedIn()) {
+            options.push({
+                tag: 'a',
+                attributes: { 'class':'cp-notifications-gotoapp' },
+                content: h('p', Messages.openNotificationsApp),
+                action: () => {
+                    Common.openURL("/notifications/");
+                }
+            });
+            options.push({ tag: 'hr' });
+        }
 
         var metadataMgr = config.metadataMgr;
         var privateData = metadataMgr.getPrivateData();
         if (!privateData.notifications) {
-            var allowNotif = h('div.cp-notifications-gotoapp', h('p', Messages.allowNotifications));
-            pads_options.unshift(h("hr"));
-            pads_options.unshift(allowNotif);
-            var $allow = $(allowNotif).click(function () {
-                Common.getSframeChannel().event('Q_ASK_NOTIFICATION', null, function (e, allow) {
-                    if (!allow) { return; }
-                    $(allowNotif).remove();
-                });
+            options.push({
+                tag: 'a',
+                attributes: { 'class':'cp-notifications-gotoapp cp-notifications-allow' },
+                content: h('p', Messages.allowNotifications),
+                action: function (ev) {
+                    Common.getSframeChannel().query('Q_ASK_NOTIFICATION', null, function (e, allow) {
+                        console.error(e, allow);
+                        if (!allow) { return; }
+                        $(ev.target).closest('li').remove();
+                    });
+
+                }
             });
+            options.push({ tag: 'hr' });
+
             var onChange = function () {
                 var privateData = metadataMgr.getPrivateData();
                 if (!privateData.notifications) { return; }
-                $allow.remove();
+                $('.cp-notifications-allow').closest('li').remove();
                 metadataMgr.off('change', onChange);
             };
             metadataMgr.onChange(onChange);
         }
 
+        var div = h('ul.cp-notifications-container', [
+            h('li.cp-notifications-empty', Messages.notifications_empty)
+        ]);
+        options.push({
+            tag: 'div',
+            content: div
+        });
 
-        if (Common.isLoggedIn()) {
-            pads_options.unshift(h("hr"));
-            pads_options.unshift(openNotifsApp);
-        }
         var dropdownConfig = {
             text: '', // Button initial text
-            options: pads_options, // Entries displayed in the menu
+            options: options, // Entries displayed in the menu
             container: $notif,
             left: true,
-            common: Common
+            common: Common,
+            iconCls: 'notification'
         };
         var $newPadBlock = UIElements.createDropdown(dropdownConfig);
         var $button = $newPadBlock.find('button');
         $button.attr('title', Messages.notificationsPage);
-        $button.addClass('fa fa-bell-o cp-notifications-bell');
+        $button.attr('aria-haspopup', 'menu');
+        $button.attr("aria-expanded", "false");
+        $button.click(function() {
+            if ($button.attr("aria-expanded") === "true") {
+                $button.attr("aria-expanded", "false");
+            } else {
+                $button.attr("aria-expanded", "true");
+            }
+        });
+        $button.addClass('cp-notifications-bell');
+        $button.attr('aria-label', Messages.notificationsPage);
         var $n = $button.find('.cp-dropdown-button-title').hide();
         var $empty = $(div).find('.cp-notifications-empty');
+        UIElements.reorderDOM($(div));
 
         var refresh = function () {
             updateUserList(toolbar, config);
             var n = $(div).find('.cp-notification').length;
-            $button.removeClass('fa-bell-o').removeClass('fa-bell');
+            let $icon = $button.find('svg');
             $n.removeClass('cp-notifications-small');
             if (n === 0) {
                 $empty.show();
                 $n.hide();
-                return void $button.addClass('fa-bell-o');
+                $icon.css('fill', 'none');
+                return;
             }
             if (n > 99) {
                 n = '99+';
@@ -1178,10 +1212,10 @@ MessengerUI, Messages, Pages) {
             }
             $empty.hide();
             $n.text(n).show();
-            $button.addClass('fa-bell');
+            $icon.css('fill', 'currentColor');
         };
 
-        Common.mailbox.subscribe(['notifications', 'team', 'broadcast', 'reminders'], {
+        Common.mailbox.subscribe(['notifications', 'team', 'broadcast', 'reminders', 'supportteam'], {
             onMessage: function (data, el) {
                 if (toolbar.$top.hasClass('toolbar-hidden')) {
                     $('.cp-collapsed-notif').css('display', '');
@@ -1189,6 +1223,17 @@ MessengerUI, Messages, Pages) {
                 if (el) {
                     $(div).prepend(el);
                 }
+                $(el).on('keydown', function (e) {
+                    if (![13,32,46].includes(e.which)) { return; }
+                    e.stopPropagation();
+                    if (e.which === 46) {
+                        $('body').find('.cp-dropdown-content li').first().focus();
+                        return $(el).find('.cp-notification-dismiss').click();
+                    }
+                    setTimeout(function () {
+                        $(el).find('.cp-notification-content').click();
+                    }, 0);
+                });
                 refresh();
             },
             onViewed: function () {
@@ -1356,6 +1401,12 @@ MessengerUI, Messages, Pages) {
         toolbar.connected = false;
         toolbar.firstConnection = true;
 
+        toolbar.badges = Common.makeUniversal('badge');
+
+        if (Array.isArray(cfg.displayed) && cfg.displayed.includes('pad')) {
+            cfg.addFileMenu = true;
+        }
+
         var $toolbar = toolbar.$toolbar = createRealtimeToolbar(config);
         toolbar.$bottom = $toolbar.find('.'+Bar.constants.bottom);
         toolbar.$bottomL = $toolbar.find('.'+Bar.constants.bottomL);
@@ -1367,6 +1418,17 @@ MessengerUI, Messages, Pages) {
         toolbar.$drawer = $toolbar.find('.'+Bar.constants.drawer);
         toolbar.$top = $toolbar.find('.'+Bar.constants.top);
         toolbar.$history = $toolbar.find('.'+Bar.constants.history);
+        toolbar.$user = $toolbar.find('.'+Bar.constants.userAdmin);
+
+        UIElements.reorderDOM(toolbar.$drawer, true);
+        UIElements.reorderDOM(toolbar.$bottomL);
+        UIElements.reorderDOM(toolbar.$bottomM);
+        UIElements.reorderDOM(toolbar.$bottomR);
+        UIElements.reorderDOM(toolbar.$top);
+        UIElements.reorderDOM(toolbar.$user);
+        if (config.$contentContainer) {
+            UIElements.reorderDOM(config.$contentContainer);
+        }
 
         toolbar.$userAdmin = $toolbar.find('.'+Bar.constants.userAdmin);
 
@@ -1381,24 +1443,20 @@ MessengerUI, Messages, Pages) {
         tb['title'] = createTitle;
         tb['pageTitle'] = createPageTitle;
         //tb['request'] = createRequest;
-        tb['lag'] = $.noop;
         tb['spinner'] = createSpinner;
-        tb['state'] = $.noop;
         tb['limit'] = createLimit; // TODO
-        tb['upgrade'] = $.noop;
         tb['newpad'] = createNewPad;
         tb['useradmin'] = createUserAdmin;
-        tb['unpinnedWarning'] = createUnpinnedWarning;
         tb['notifications'] = createNotifications;
         tb['maintenance'] = createMaintenance;
 
         tb['pad'] = function () {
             toolbar.$file.show();
-            addElement([
+            toolbar.addElement([
                 'chat',
                 'collapse',
                 'userlist', 'title', 'useradmin', 'spinner',
-                'newpad', 'share', 'access', 'limit', 'unpinnedWarning',
+                'newpad', 'share', 'access', 'limit',
                 'notifications'
             ], {});
         };
@@ -1433,6 +1491,7 @@ MessengerUI, Messages, Pages) {
 
 
         toolbar['linkToMain'] = createLinkToMain(toolbar, config);
+        toolbar['skipLink'] = Bar.createSkipLink(toolbar, config);
 
         if (!config.realtime) { toolbar.connected = true; }
 

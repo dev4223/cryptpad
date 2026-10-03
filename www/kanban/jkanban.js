@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 (function e(t, n, r) {
     function s(o, u) {
         if (!n[o]) {
@@ -762,9 +766,9 @@
                     trash.setAttribute('id', 'kanban-trash');
                     trash.setAttribute('class', 'kanban-trash');
                     var trashBg = document.createElement('div');
-                    var trashIcon = document.createElement('i');
-                    trashIcon.setAttribute('class', 'fa fa-trash');
-                    trash.appendChild(trashIcon);
+                    // var trashIcon = document.createElement('i');
+                    // trashIcon.setAttribute('class', 'fa fa-trash');
+                    // trash.appendChild(trashIcon);
                     trash.appendChild(trashBg);
                     self.boardContainer.push(trash);
 

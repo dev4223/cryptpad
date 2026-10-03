@@ -1,6 +1,10 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Load #1, load as little as possible because we are in a race to get the loading screen up.
 define([
-    '/bower_components/nthen/index.js',
+    '/components/nthen/index.js',
     '/api/config',
     '/common/dom-ready.js',
     '/common/sframe-common-outer.js'
@@ -19,43 +23,55 @@ define([
                 });
             });
             sframeChan.on('Q_SETTINGS_DRIVE_GET', function (d, cb) {
+                if (d !== "full") {
+                    Cryptpad.getAccountObject(null, function (obj) {
+                        cb(obj);
+                    });
+                    return;
+                }
                 Cryptpad.getUserObject(null, function (obj) {
                     if (obj.error) { return void cb(obj); }
-                    if (d === "full") {
-                        // We want shared folders too
-                        var result = {
-                            uo: obj,
-                            sf: {}
-                        };
-                        if (!obj.drive || !obj.drive.sharedFolders) { return void cb(result); }
-                        Utils.nThen(function (waitFor) {
-                            Object.keys(obj.drive.sharedFolders).forEach(function (id) {
-                                Cryptpad.getSharedFolder({
-                                    id: id
-                                }, waitFor(function (obj) {
-                                    result.sf[id] = obj;
-                                }));
-                            });
-                        }).nThen(function () {
-                            cb(result);
+                    // We want shared folders too
+                    var result = {
+                        uo: obj,
+                        sf: {}
+                    };
+                    if (!obj.drive || !obj.drive.sharedFolders) { return void cb(result); }
+                    Utils.nThen(function (waitFor) {
+                        Object.keys(obj.drive.sharedFolders).forEach(function (id) {
+                            Cryptpad.getSharedFolder({
+                                id: id
+                            }, waitFor(function (obj) {
+                                result.sf[id] = obj;
+                            }));
                         });
-                        return;
-                    }
-                    // We want only the user object
-                    cb(obj);
+                    }).nThen(function () {
+                        cb(result);
+                    });
                 });
             });
             sframeChan.on('Q_SETTINGS_DRIVE_SET', function (data, cb) {
                 if (data && data.uo) { data = data.uo; }
-                var sjson = JSON.stringify(data);
-                require([
-                    '/common/cryptget.js',
-                ], function (Crypt) {
-                    var k = Utils.LocalStore.getUserHash() || Utils.LocalStore.getFSHash();
-                    Crypt.put(k, sjson, function (err) {
-                        cb(err);
+                const drive = JSON.parse(JSON.stringify(data.drive || ''));
+                const todo = () => {
+                    var sjson = JSON.stringify(data);
+                    require([
+                        '/common/cryptget.js',
+                    ], function (Crypt) {
+                        var k = Cryptpad.userHash || Utils.LocalStore.getFSHash();
+                        Crypt.put(k, sjson, function (err) {
+                            cb(err);
+                        });
                     });
-                });
+                };
+                if (Object.keys(data).length === 1 && data.drive) {
+                    return Cryptpad.getAccountObject(null, function (obj) {
+                        data = JSON.parse(JSON.stringify(obj));
+                        data.drive = drive;
+                        todo();
+                    });
+                }
+                todo();
             });
             sframeChan.on('Q_SETTINGS_LOGOUT_PROPERLY', function (data, cb) {
                 Utils.LocalStore.clearLoginToken();
@@ -69,6 +85,25 @@ define([
             });
             sframeChan.on('Q_SETTINGS_IMPORT_LOCAL', function (data, cb) {
                 Cryptpad.mergeAnonDrive(cb);
+            });
+            sframeChan.on('Q_SETTINGS_MFA_CHECK', function (obj, cb) {
+                require([
+                    '/common/outer/login-block.js',
+                ], function (Block) {
+                    var blockHash = Utils.LocalStore.getBlockHash();
+                    if (!blockHash) { return void cb({ err: 'NOBLOCK' }); }
+                    var parsed = Block.parseBlockHash(blockHash);
+                    Utils.Util.getBlock(parsed.href, {}, function (err, data) {
+                        cb({
+                            mfa: err === 401,
+                            sso: data && data.sso,
+                            type: data && data.method
+                        });
+                    });
+                });
+            });
+            sframeChan.on('Q_SETTINGS_REMOVE_OWNED_PADS', function (data, cb) {
+                Cryptpad.removeOwnedPads(data, cb);
             });
             sframeChan.on('Q_SETTINGS_DELETE_ACCOUNT', function (data, cb) {
                 Cryptpad.deleteAccount(data, cb);
@@ -85,14 +120,32 @@ define([
             sframeChan.on('Q_SET_DRIVE_REDIRECT_PREFERENCE', function (data, cb) {
                 Cryptpad.setDriveRedirectPreference(data, cb);
             });
+
+            // Adding a new avatar from the profile: pin it
+            // and store it in the profile and user objects
+            sframeChan.on('Q_PROFILE_AVATAR_ADD', function (data, cb) {
+                var chanId = Utils.Hash.hrefToHexChannelId(data, null);
+                Cryptpad.pinPads([chanId], function (e) {
+                    if (e) { return void cb(e); }
+                    Cryptpad.setAvatar(data, cb);
+                });
+            });
+            // Removing the avatar from the profile: unpin it
+            sframeChan.on('Q_PROFILE_AVATAR_REMOVE', function (data, cb) {
+                var chanId = Utils.Hash.hrefToHexChannelId(data, null);
+                Cryptpad.unpinPads([chanId], function () {
+                    Cryptpad.setAvatar(undefined, cb);
+                });
+            });
         };
         var category;
         if (window.location.hash) {
             category = window.location.hash.slice(1);
             window.location.hash = '';
         }
-        var addData = function (obj) {
+        var addData = function (obj, Cryptpad, user, Utils) {
             if (category) { obj.category = category; }
+            obj.isSSO = Boolean(Utils.LocalStore.getSSOSeed());
         };
         SFCommonO.start({
             noRealtime: true,

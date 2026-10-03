@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 define([
     'jquery',
     '/common/modes.js',
@@ -8,8 +12,10 @@ define([
     '/common/common-hash.js',
     '/common/common-util.js',
     '/common/text-cursor.js',
-    '/bower_components/chainpad/chainpad.dist.js',
-], function ($, Modes, Themes, Messages, UIElements, MT, Hash, Util, TextCursor, ChainPad) {
+    '/components/chainpad/chainpad.dist.js',
+    '/common/hyperscript.js',
+    '/common/common-icons.js',
+], function ($, Modes, Themes, Messages, UIElements, MT, Hash, Util, TextCursor, ChainPad, h, Icons) {
     var module = {};
 
      var cursorToPos = module.cursorToPos = function(cursor, oldText) {
@@ -140,10 +146,15 @@ define([
         return text.trim();
     };
 
+    var isMobile = /Android|iPhone/i.test(navigator.userAgent);
+
     module.mkIndentSettings = function (editor, metadataMgr) {
         var setIndentation = function (units, useTabs, fontSize, spellcheck, brackets) {
             if (typeof(units) !== 'number') { return; }
             var doc = editor.getDoc();
+            if (isMobile && fontSize < 16) {
+                fontSize = 16;
+            }
             editor.setOption('indentUnit', units);
             editor.setOption('tabSize', units);
             editor.setOption('indentWithTabs', useTabs);
@@ -165,6 +176,10 @@ define([
                         if (!useTabs) { editor.execCommand("insertSoftTab"); }
                         else { editor.execCommand("insertTab"); }
                     }
+                },
+                //remove focus from editor
+                "Esc": function () {
+                    editor.display.input.blur();
                 },
                 "Shift-Tab": function () {
                     editor.execCommand("indentLess");
@@ -216,14 +231,12 @@ define([
         var $textarea = exp.$textarea = textarea ? $(textarea) : $('#editor1');
         if (!$textarea.length) { $textarea = exp.$textarea = $pad.contents().find('#editor1'); }
 
-        var Title;
         var onLocal = function () {};
         var $drawer;
         exp.init = function (local, title, toolbar) {
             if (typeof local === "function") {
                 onLocal = local;
             }
-            Title = title;
             $drawer = toolbar.$theme || $();
         };
 
@@ -267,6 +280,7 @@ define([
         module.handleImagePaste(editor);
 
         var setMode = exp.setMode = function (mode, cb) {
+            if (!mode) { return; }
             exp.highlightMode = mode;
             if (mode === 'markdown') { mode = 'gfm'; }
             if (/text\/x/.test(mode)) {
@@ -286,9 +300,11 @@ define([
                 editor.setOption('mode', mode);
             }
             if (exp.$language) {
-                var name = exp.$language.find('a[data-value="' + mode + '"]').text() || undefined;
+                var name = exp.$language.$menu.find('a[data-value="' + mode + '"]').text() || undefined;
                 name = name ? Messages.languageButton + ' ('+name+')' : Messages.languageButton;
                 exp.$language.setValue(mode, name);
+                exp.$language.find('span.cp-language-text').text(name);
+                exp.$language.find('span.cp-language-text').prepend(Icons.get('chevron-right'));
             }
 
                 if (mode === "orgmode") {
@@ -333,6 +349,8 @@ define([
                     var name = theme || undefined;
                     name = name ? Messages.themeButton + ' ('+theme+')' : Messages.themeButton;
                     $select.setValue(theme, name);
+                    $select.find('span.cp-theme-text').text(name);
+                    $select.find('span.cp-theme-text').prepend(Icons.get('chevron-right'));
                 }
             };
         }());
@@ -348,7 +366,6 @@ define([
                     tag: 'a',
                     attributes: {
                         'data-value': l.mode,
-                        'href': '#',
                     },
                     content: [l.language] // Pretty name of the language value
                 });
@@ -357,31 +374,45 @@ define([
                 text: Messages.languageButton, // Button initial text
                 options: options, // Entries displayed in the menu
                 isSelect: true,
+                isSubmenuOf: $drawer,
                 feedback: 'CODE_LANGUAGE',
                 common: Common
             };
             var $block = exp.$language = UIElements.createDropdown(dropdownConfig);
-            $block.find('button').attr('title', Messages.languageButtonTitle);
+            $block.find('button').attr('title', Messages.languageButtonTitle).hide();
+            $block.prepend(h('span.cp-language-text', Messages.languageButton));
 
             var isHovering = false;
-            var $aLanguages = $block.find('a');
+            var $aLanguages = $block.$menu.find('li');
             $aLanguages.mouseenter(function () {
                 isHovering = true;
-                setMode($(this).attr('data-value'));
+                setMode($(this).find('a').attr('data-value'));
             });
             $aLanguages.mouseleave(function () {
                 if (isHovering) {
-                    setMode($block.find(".cp-dropdown-element-active").attr('data-value'));
+                    setMode($block.$menu.find(".cp-dropdown-element-active").attr('data-value'));
                 }
             });
-            $aLanguages.click(function () {
+            //$aLanguages.click(function () {
+            $block.onChange.reg(() => {
                 isHovering = false;
-                var mode = $(this).attr('data-value');
+                var mode = $block.getValue();
                 setMode(mode, onModeChanged);
+                $block.close();
                 onLocal();
             });
 
-            if ($drawer) { $drawer.append($block); }
+            if ($drawer) {
+                var $blockButton = UIElements.createDropdownEntry({
+                    tag: 'a',
+                    content: $block[0],
+                    action: function () {
+                        $block.find('button').click();
+                    },
+                });
+                dropdownConfig.$parentButton = $blockButton;
+                $drawer.append($blockButton);
+            }
             if (exp.highlightMode) { exp.setMode(exp.highlightMode); }
             if (cb) { cb(); }
         };
@@ -400,7 +431,6 @@ define([
                         tag: 'a',
                         attributes: {
                             'data-value': l.name,
-                            'href': '#',
                         },
                         content: [l.name] // Pretty name of the language value
                     });
@@ -409,27 +439,30 @@ define([
                     text: Messages.code_editorTheme, // Button initial text
                     options: options, // Entries displayed in the menu
                     isSelect: true,
+                    isSubmenuOf: $drawer,
                     initialValue: lastTheme,
                     feedback: 'CODE_THEME',
                     common: Common
                 };
                 var $block = exp.$theme = UIElements.createDropdown(dropdownConfig);
-                $block.find('button').attr('title', Messages.themeButtonTitle).click(function () {
+                /*$block.find('button').attr('title', Messages.themeButtonTitle).click(function () {
                     var state = $block.find('.cp-dropdown-content').is(':visible');
                     var $c = $block.closest('.cp-toolbar-drawer-content');
                     $c.removeClass('cp-dropdown-visible');
                     if (!state) {
                         $c.addClass('cp-dropdown-visible');
                     }
-                });
+                });*/
+                $block.find('button').hide();
+                $block.prepend(h('span.cp-theme-text', Messages.languageButton));
 
                 setTheme(lastTheme, $block);
 
                 var isHovering = false;
-                var $aThemes = $block.find('a');
+                var $aThemes = $block.$menu.find('li');
                 $aThemes.mouseenter(function () {
                     isHovering = true;
-                    var theme = $(this).attr('data-value');
+                    var theme = $(this).find('a').attr('data-value');
                     setTheme(theme, $block);
                 });
                 $aThemes.mouseleave(function () {
@@ -438,14 +471,24 @@ define([
                         Common.setAttribute(themeKey, lastTheme);
                     }
                 });
-                $aThemes.click(function () {
+                $block.onChange.reg(() => {
                     isHovering = false;
-                    var theme = $(this).attr('data-value');
+                    var theme = $block.getValue();
                     setTheme(theme, $block);
                     Common.setAttribute(themeKey, theme);
                 });
 
-                if ($drawer) { $drawer.append($block); }
+                if ($drawer) {
+                    const $blockButton = UIElements.createDropdownEntry({
+                        tag: 'a',
+                        content: $block[0],
+                        action: function () {
+                            $block.find('button').click();
+                        },
+                    });
+                    dropdownConfig.$parentButton = $blockButton;
+                    $drawer.append($blockButton);
+                }
                 if (cb) { cb(); }
             };
             Common.getAttribute(themeKey, todo);
@@ -480,7 +523,7 @@ define([
                 $toolbarContainer.find('#language-mode').val('text');
             }
             // return the mode so that the code editor can decide how to display the new content
-            return { content: content, mode: mode };
+            return { content: content, highlightMode: mode, authormarks: {} };
         };
 
         exp.setValueAndCursor = function (oldDoc, remoteDoc) {

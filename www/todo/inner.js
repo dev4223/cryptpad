@@ -1,18 +1,22 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 define([
     'jquery',
-    '/bower_components/chainpad-crypto/crypto.js',
+    '/components/chainpad-crypto/crypto.js',
     'chainpad-listmap',
     '/common/toolbar.js',
-    '/bower_components/nthen/index.js',
+    '/components/nthen/index.js',
     '/common/sframe-common.js',
     '/common/common-interface.js',
     '/common/common-hash.js',
     '/todo/todo.js',
     '/customize/messages.js',
-    '/bower_components/sortablejs/Sortable.min.js',
+    '/components/sortablejs/Sortable.min.js',
+    '/common/common-icons.js',
 
-    'css!/bower_components/bootstrap/dist/css/bootstrap.min.css',
-    'css!/bower_components/components-font-awesome/css/font-awesome.min.css',
+    'css!/components/bootstrap/dist/css/bootstrap.min.css',
     'less!/todo/app-todo.less',
 ], function (
     $,
@@ -25,7 +29,8 @@ define([
     Hash,
     Todo,
     Messages,
-    Sortable
+    Sortable,
+    Icons
     )
 {
     var APP = window.APP = {};
@@ -88,8 +93,8 @@ define([
                 }
 
                 var checked = entry.state === 1 ?
-                    'cp-app-todo-task-checkbox-checked fa-check-square-o':
-                    'cp-app-todo-task-checkbox-unchecked fa-square-o';
+                    'cp-app-todo-task-checkbox-checked':
+                    'cp-app-todo-task-checkbox-unchecked';
 
                 var title = entry.state === 1?
                     Messages.todo_markAsIncompleteTitle:
@@ -98,9 +103,9 @@ define([
 
                 removeTips();
                 return $('<span>', {
-                    'class': 'cp-app-todo-task-checkbox fa ' + checked,
+                    'class': 'cp-app-todo-task-checkbox ' + checked,
                     //title: title,
-                }).on('click', function () {
+                }, checked ? Icons.get('checked-box'): Icons.get('unchecked-box')).on('click', function () {
                     entry.state = (entry.state + 1) % 2;
                     if (typeof(cb) === 'function') {
                         cb(entry.state);
@@ -161,9 +166,9 @@ define([
                     .text(new Date(entry.ctime).toLocaleString())
                     .appendTo($taskDiv);*/
                 $('<button>', {
-                    'class': 'fa fa-times cp-app-todo-task-remove btn btn-danger',
+                    'class': 'cp-app-todo-task-remove btn btn-danger',
                     title: Messages.todo_removeTaskTitle,
-                }).appendTo($taskDiv).on('click', function() {
+                }, Icons.get('close')).appendTo($taskDiv).on('click', function() {
                     deleteTask(el);
                 });
 

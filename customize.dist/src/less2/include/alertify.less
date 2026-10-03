@@ -1,3 +1,8 @@
+/*
+ * SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
 
 @import (reference) "./colortheme-all.less";
 @import (reference) "./browser.less";
@@ -33,6 +38,7 @@
             font-size: large;
 
             box-shadow: @alertify_box-shadow;
+            border-radius: @variables_radius;
             &, &.default {
                 // FIXME
                 background: @cp_alertify-log-bg;
@@ -61,12 +67,19 @@
         outline: none;
         font: @colortheme_app-font;
 
+        .lucide {
+            width: @variables_icon_width;
+            height: @variables_icon_height;
+            margin-right: @variables_icon_margin;
+        }
         .cp-checkmark {
             color: @cryptpad_text_col;
-        }
-
-        .cp-admin-message {
-            color: @cryptpad_text_col;
+            height: 1.5rem;
+            svg {
+                margin-left: @variables_icon_margin;
+                min-height: @variables_icon_height;
+                min-width: @variables_icon_width;
+            }
         }
 
         .cp-inline-alert-text {
@@ -85,6 +98,8 @@
 
         h1, h2, h3 {
             margin-top: 0;
+            display: flex;
+            align-items: center;
         }
 
         &.hide {
@@ -99,6 +114,31 @@
 
         &, * {
             box-sizing: border-box;
+        }
+
+        .cp-pre-copy-container {
+            position: relative;
+            padding: 10px 5px;
+            color: @cryptpad_text_col;
+            background: @cp_loading-msg-bg;
+            border-radius: @variables_radius;
+            .cp-pre-copy-button {
+                cursor: pointer;
+                position: absolute;
+                right: 5px;
+                top: 5px;
+                svg {
+                    height: 1.5rem;
+                    width: 1.5rem;
+                }
+                &:hover, &:not(:disabled):active, &:focus {
+                    color: @cp_loading-color;
+                }
+            }
+            pre.cp-pre-copy {
+                color: @cryptpad_text_col;
+                margin: 0;
+            }
         }
 
         .dialog {
@@ -155,6 +195,10 @@
                 }
             }
 
+            .cp-alertify-scrollable {
+                overflow: auto;
+            }
+
             .msg {
                 padding: @alertify_padding-base;
                 margin-bottom: @alertify_padding-base;
@@ -183,6 +227,25 @@
                         }
                     }
                 }
+                .cp-dropdown-content {
+                    a {
+                        text-decoration: none;
+                    }
+                }
+                .cp-usergrid-user, textarea, a {
+                    outline: none;
+                    &:focus-visible {
+                        outline: @variables_focus_style;
+                    }
+                }
+                .cp-usergrid-user {
+                    span {
+                        &:focus-visible {
+                            outline: @variables_focus_style;
+                            border-radius: @variables_radius;
+                        }
+                    }
+                }
             }
             .cp-alertify-type-container {
                 overflow: visible !important;
@@ -200,6 +263,8 @@
                     box-sizing: content-box;
                     .alertify-tabs-title {
                         .tools_unselectable();
+                        display: inline-flex;
+                        align-items: center;
                         font-size: 20px;
                         height: 40px;
                         line-height: 40px;
@@ -221,6 +286,10 @@
                                     display: none;
                                 }
                             }
+                        }
+                        outline: none;
+                        &:focus-visible {
+                            outline: @variables_focus_style;
                         }
                     }
                     span.alertify-tabs-active {
@@ -248,6 +317,10 @@
 
             input {
                 .tools_placeholder-color();
+                outline: none;
+                &:focus-visible {
+                    outline: @variables_focus_style;
+                }
             }
 
             span.cp-password-container {
@@ -261,9 +334,16 @@
                 button {
                     margin: 0 !important;
                 }
+                svg {
+                   margin: 0;
+                }
+                .cp-password-reveal {
+                    margin-left: 0.5rem;
+                    margin-right: 0.5rem;
+                }
             }
 
-            .fa-question-circle { // help links to Docs
+            .lucide-circle-question-mark { // help links to Docs
                 color: @cp_alertify-fg;
                 &:hover {
                     text-decoration: none;
@@ -294,6 +374,11 @@
                 min-height: 36px;
                 min-width: 88px;
             }
+            .cp-spinner {
+                svg {
+                    animation: spin 10s linear infinite;
+                }
+            }
 
             nav {
                 padding: @alertify_padding-base;
@@ -309,6 +394,14 @@
                 }
                 div.cp-button-confirm {
                     vertical-align: middle;
+                }
+            }
+            @media screen and (max-width: @browser_media-medium-screen) {
+                .cp-crowdfunding-modal nav {
+                    display: flex;
+                    flex-wrap: wrap;
+                    justify-content: center;
+                    gap: 0.5rem;
                 }
             }
         }
@@ -460,7 +553,6 @@
                     margin-bottom: @alertify_padding-base;
                 }
                 button {
-                    width: 50px;
                     margin: 0;
                     min-width: 0;
                     font-size: 18px !important;
@@ -480,6 +572,33 @@
         .cp-usergrid-grid {
             max-height: 225px;
             overflow-x: auto;
+        }
+    }
+    // this might not be the best place for this.
+    // I just put it next to other "share" styles
+    // --Aaron
+    #cp-qr-container {
+        position: relative;
+        background-color: white;
+        display: inline-flex;
+        padding: @alertify_padding-base;
+        border-radius: @variables_radius_L;
+        #cp-qr-blocker {
+            position: absolute;
+            height: 100%;
+            width: 100%;
+            border-radius: @variables_radius_L;
+
+            margin: -@alertify_padding-base;
+            padding-top: @alertify_padding-base * 2;
+            text-align: center;
+
+            background: @cryptpad_color_brand;
+            color: @cryptpad_text_col;
+            font-weight: bold;
+            &.hidden {
+                opacity: 0;
+            }
         }
     }
 }

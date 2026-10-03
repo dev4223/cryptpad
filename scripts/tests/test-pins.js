@@ -1,4 +1,7 @@
-/*jshint esversion: 6 */
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 const Pins = require("../../lib/pins");
 
 var stats = {
@@ -30,7 +33,7 @@ var handler = function (ref, id /* safeKey */, pinned) {
     //console.log(ref, id);
 };
 
-Pins.list(function (err) {
+Pins.load(function (err) {
     if (err) { return void console.error(err); }
 /*
     for (var id in pinned) {

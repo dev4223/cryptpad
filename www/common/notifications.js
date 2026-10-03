@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 define([
     'jquery',
     '/common/hyperscript.js',
@@ -6,12 +10,20 @@ define([
     '/common/common-ui-elements.js',
     '/common/common-util.js',
     '/common/common-constants.js',
+    '/components/marked/marked.min.js',
     '/customize/messages.js',
     '/customize/pages.js',
-    '/lib/datepicker/flatpickr.js',
-], function($, h, Hash, UI, UIElements, Util, Constants, Messages, Pages, Flatpickr) {
+    '/common/common-icons.js',
+    'tui-date-picker'
+], function($, h, Hash, UI, UIElements, Util, Constants, Marked, Messages, Pages, Icons, DatePicker) {
 
     var handlers = {};
+
+    var renderer = new Marked.Renderer();
+    Marked.setOptions({
+        renderer: renderer,
+        sanitize: true
+    });
 
     var defaultDismiss = function(common, data) {
         return function(e) {
@@ -125,9 +137,29 @@ define([
             var obj = {
                 p: msg.content.isTemplate ? ['template'] : undefined,
                 t: teamNotification || undefined,
+                f: 1,
                 pw: msg.content.password || ''
             };
             common.openURL(Hash.getNewPadURL(msg.content.href, obj));
+            defaultDismiss(common, data)();
+        };
+        if (!content.archived) {
+            content.dismissHandler = defaultDismiss(common, data);
+        }
+    };
+
+    // Send chat message
+    handlers['SEND_CHAT_MESSAGE'] = function(common, data) {
+        var content = data.content;
+        var msg = content.msg;
+        var key = 'sent_chatMessage';
+
+        var name = Util.fixHTML(msg.content.name) || Messages.anonymous;
+        content.getFormatText = function() {
+            return Messages._getKey(key, [name]);
+        };
+        content.handler = function() {
+            common.openURL('/contacts/');
             defaultDismiss(common, data)();
         };
         if (!content.archived) {
@@ -335,6 +367,28 @@ define([
         }
     };
 
+    handlers['FORM_RESPONSE'] = function(common, data) {
+        var content = data.content;
+        var msg = content.msg;
+
+        // Display the notification
+        var title = Util.fixHTML(msg.content.title || Messages.unknownPad);
+        var href = msg.content.href;
+
+        content.getFormatText = function() {
+            return Messages._getKey('form_responseNotification', [title]);
+        };
+        if (href) {
+            content.handler = function() {
+                common.openURL(href);
+                defaultDismiss(common, data)();
+            };
+        }
+        if (!content.archived) {
+            content.dismissHandler = defaultDismiss(common, data);
+        }
+    };
+
     handlers['COMMENT_REPLY'] = function(common, data) {
         var content = data.content;
         var msg = content.msg;
@@ -385,6 +439,25 @@ define([
         }
     };
 
+    handlers['SF_DELETED'] = function(common, data) {
+        var content = data.content;
+        var msg = content.msg;
+
+        // Display the notification
+        var title = Util.fixHTML(msg.content.title);
+        var teamName = Util.fixHTML(msg.content.teamName);
+
+        content.getFormatText = function() {
+            if (teamName) {
+                return Messages._getKey('dph_sf_destroyed_team', [title, teamName]);
+            }
+            return Messages._getKey('dph_sf_destroyed', [title]);
+        };
+        if (!content.archived) {
+            content.dismissHandler = defaultDismiss(common, data);
+        }
+    };
+
     handlers['MOVE_TODO'] = function(common, data) {
         var content = data.content;
         var msg = content.msg;
@@ -412,7 +485,9 @@ define([
         content.getFormatText = function () {
             var msg = Pages.setHTML(h('span'), Messages.settings_safeLinkDefault);
             var i = msg.querySelector('i');
-            if (i) { i.classList = 'fa fa-shhare-alt'; }
+            if (i) { i.remove(); }
+            const icon = Icons.get('share');
+            msg.appendChild(icon);
             return msg.innerHTML;
         };
 
@@ -439,6 +514,40 @@ define([
         }
     };
 
+    handlers['NOTIF_TICKET'] = function (common, data) {
+        var content = data.content;
+        var msg = content.msg.content;
+        content.getFormatText = function () {
+            let title = Util.fixHTML(msg.title);
+            let text = msg.isAdmin ? Messages.support_notification :
+                        Messages._getKey('support_userNotification', [title]);
+            return text;
+        };
+        content.handler = function () {
+            let id =  Util.hexToBase64(msg.channel).slice(0,10);
+            let type = msg.isClose ? 'closed' : 'open';
+            let url = msg.isAdmin ? '/support/#tickets' : `/moderation/#${type}-${id}`;
+            common.openURL(url);
+            defaultDismiss(common, data)();
+        };
+        if (!content.archived) {
+            content.dismissHandler = defaultDismiss(common, data);
+        }
+    };
+    handlers['ADD_MODERATOR'] = function (common, data) {
+        var content = data.content;
+        content.getFormatText = function () {
+            return Messages.support_moderatorNotification;
+        };
+        content.handler = function () {
+            common.openURL('/moderation/');
+            defaultDismiss(common, data)();
+        };
+        if (!content.archived) {
+            content.dismissHandler = defaultDismiss(common, data);
+        }
+    };
+
     handlers['BROADCAST_CUSTOM'] = function (common, data) {
         var content = data.content;
         var msg = content.msg.content;
@@ -449,11 +558,33 @@ define([
         var toShow = text[myLang];
         // Otherwise, fallback to the default language if it exists
         if (!toShow && defaultL) { toShow = text[defaultL]; }
+        toShow ||= text['default'];
         // No translation available, dismiss
         if (!toShow) { return defaultDismiss(common, data)(); }
 
         var slice = toShow.length > 200;
-        toShow = Util.fixHTML(toShow);
+        var unsafe = toShow;
+
+        if (content.markdown === true) {
+            toShow = Marked.parse(toShow);
+            slice = false;
+            content.handler = function () {
+                var content = h('div', [
+                    h('h4', Messages.broadcast_newCustom),
+                    UI.setHTML(h('div.cp-admin-message'), toShow)
+                ]);
+                $(content).find('a').click(e => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const href = e.target.href || '';
+                    if (!/^(http|\/)/.test(href)) { return; }
+                    common.openURL(e.target.href);
+                });
+                UI.alert(content);
+            };
+        } else {
+            toShow = Util.fixHTML(toShow);
+        }
 
         content.getFormatText = function () {
             if (slice) {
@@ -465,12 +596,14 @@ define([
             content.handler = function () {
                 var content = h('div', [
                     h('h4', Messages.broadcast_newCustom),
-                    h('div.cp-admin-message', toShow)
+                    h('div.cp-admin-message', unsafe) // Use unsafe string, hyperscript is safe
                 ]);
                 UI.alert(content);
             };
         }
-        if (!content.archived) {
+        if (content.dismiss) {
+            content.dismissHandler = content.dismiss;
+        } else if (!content.archived) {
             content.dismissHandler = defaultDismiss(common, data);
         }
     };
@@ -481,6 +614,18 @@ define([
         var missed = content.msg.missed;
         var start = msg.start;
         var title = Util.fixHTML(msg.title);
+        content.handler = function () {
+            var priv = common.getMetadataMgr().getPrivateData();
+            var time = Util.find(data, ['content', 'msg', 'content', 'start']);
+            if (priv.app === "calendar" && window.APP && window.APP.moveToDate) {
+                return void window.APP.moveToDate(time);
+            }
+            var url = Hash.hashToHref('', 'calendar');
+            var optsUrl = Hash.getNewPadURL(url, {
+                time: time
+            });
+            common.openURL(optsUrl);
+        };
         content.getFormatText = function () {
             var now = +new Date();
 
@@ -491,7 +636,7 @@ define([
             var nowDateStr = new Date().toLocaleDateString();
             var startDate = new Date(start);
             if (msg.isAllDay && msg.startDay) {
-                startDate = Flatpickr.parseDate(msg.startDay);
+                startDate = DatePicker.parseDate(msg.startDay);
             }
 
             // Missed events

@@ -1,9 +1,14 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /*
  * This is an internal configuration file.
  * If you want to change some configurable values, use the '/customize/application_config.js'
  * file (make a copy from /customize.dist/application_config.js)
  */
-define(function() {
+(() => {
+const factory = () => {
     var AppConfig = {};
 
     /* Select the buttons displayed on the main page to create new collaborative sessions.
@@ -12,7 +17,8 @@ define(function() {
      * You should never remove the drive from this list.
      */
     AppConfig.availablePadTypes = ['drive', 'teams', 'sheet', 'doc', 'presentation', 'pad', 'kanban', 'code', 'form', 'poll', 'whiteboard',
-                                'file', 'contacts', 'slide', 'convert'];
+                                'file', 'contacts', 'slide', 'convert', 'diagram'];
+
     /* The registered only types are apps restricted to registered users.
      * You should never remove apps from this list unless you know what you're doing. The apps
      * listed here by default can't work without a user account.
@@ -112,6 +118,12 @@ define(function() {
      */
     AppConfig.roadmap = false;
 
+    /* If you have a status page for your instance, you may use the setting belox
+     *
+     * See the comments above for a description of possible configurations.
+     */
+    AppConfig.status = false;
+
     /* By default CryptPad instances display some text on the home page indicating that
      * they are an independent community instance of the software. You can provide customized messages
      * by filling in the following data structure with strings for each language you intend to support.
@@ -121,7 +133,7 @@ define(function() {
         // en: "Hello world",
         // fr: "Bonjour le monde",
         // de: "Hallo Welt",
-        // "pt-br": "Olá Mundo"<
+        // "pt-br": "Olá Mundo"
     };
 
     /*  Cryptpad apps use a common API to display notifications to users
@@ -182,30 +194,32 @@ define(function() {
     // Customize the icon used for each application.
     // You can update the colors by making a copy of /customize.dist/src/less2/include/colortheme.less
     AppConfig.applicationsIcon = {
-        file: 'cptools-file',
-        fileupload: 'cptools-file-upload',
-        folderupload: 'cptools-folder-upload',
-        link: 'fa-link',
-        pad: 'cptools-richtext',
-        code: 'cptools-code',
-        slide: 'cptools-slide',
-        poll: 'cptools-poll',
-        form: 'cptools-poll',
-        whiteboard: 'cptools-whiteboard',
-        todo: 'cptools-todo',
-        contacts: 'fa-address-book',
-        calendar: 'fa-calendar',
-        kanban: 'cptools-kanban',
-        doc: 'fa-file-word-o',
-        presentation: 'fa-file-powerpoint-o',
-        sheet: 'fa-file-excel-o',
-        drive: 'fa-hdd-o',
-        teams: 'fa-users',
-        admin: 'fa-gears',
-        settings: 'fa-gear',
-        profile: 'fa-user-circle',
-        support: 'fa-life-ring',
-        accounts: 'fa-ticket'
+        file: 'file',
+        fileupload: 'drive-upload-file',
+        folderupload: 'drive-upload-folder',
+        link: 'link',
+        pad: 'pad',
+        code: 'code-pad',
+        slide: 'slide',
+        poll: 'poll',
+        form: 'form',
+        whiteboard: 'whiteboard',
+        diagram: 'diagram',
+        todo: 'file',
+        contacts: 'contacts',
+        calendar: 'calendar',
+        kanban: 'kanban',
+        doc: 'doc',
+        presentation: 'presentation',
+        sheet: 'sheet',
+        drive: 'drive',
+        teams: 'teams',
+        admin: 'administration',
+        settings: 'settings',
+        moderation: 'moderation',
+        profile: 'user-profile',
+        support: 'support',
+        accounts: 'subscribe'
     };
 
     // Ability to create owned pads and expiring pads through a new pad creation screen.
@@ -218,6 +232,11 @@ define(function() {
     // Prevent anonymous users from creating new pads (they can still access and edit existing ones)
     // NOTE: this is only enforced client-side and will not prevent malicious clients from storing data
     AppConfig.disableAnonymousPadCreation = false;
+
+    // If your application is meant to be used exclusively with the
+    // integration API, you can disable the direct access to the app by
+    // setting integrationOnly to true
+    AppConfig.integrationOnly = false;
 
     // Hide the usage bar in settings and drive
     //AppConfig.hideUsageBar = true;
@@ -262,6 +281,10 @@ define(function() {
     // You can change the value here.
     // AppConfig.maxOwnedTeams = 5;
 
+    // Same settings but for premium users (users with a custom limit included)
+    // AppConfig.maxPremiumTeamsSlots = 10;
+    // AppConfig.maxPremiumTeamsOwned = 10;
+
     // The userlist displayed in collaborative documents is stored alongside the document data.
     // Everytime someone with edit rights joins a document or modify their user data (display
     // name, avatar, color, etc.), they update the "userlist" part of the document. When too many
@@ -280,7 +303,16 @@ define(function() {
     // the driveless mode by changing the following value to "false"
     AppConfig.allowDrivelessMode = true;
 
-    AppConfig.emojiAvatars = '🙈 🦀 🐞 🦋 🐬 🐋 🐢 🦉 🦆 🐧 🦡 🦘 🦨 🦦 🦥 🐼 🐻 🦝 🦓 🐄 💮️ 🐙️ 🌸️ 🌻️ 🐝️ 🐐 🦙 🦒 🐘 🦏 🐁 🐹 🐰 🦫 🦔 🐨 🐱 🐺 👺 👹 👽 👾 🤖'.split(/\s+/);
+    AppConfig.emojiAvatars = '🐵 🐒 🐶 🐩 🐺 🐱 🐯 🐴 🐎 🐮 🐷 🐗 🐑 🐫 🐘 🐭 🐹 🐰 🐻 🐨 🐼 🐔 🐣 🐥 🐢 🐍 🐲 🐳 🐬 🐟 🐠 🐡 🐙 🐚 🐌 🐛 🐝 🐞 💐 🌸 💮 🌹 🌺 🌻 🌼 🌷 🌱 🌴 🌵 🌾 🌿 🍀 🍁 🍂 🍃 🍄 💫 🌛 ⛄ 🔥 💧 🌊 🎃 👹 👺 👻 👽 👾'.split(/\s+/);
 
     return AppConfig;
-});
+};
+
+if (typeof(module) !== 'undefined' && module.exports) {
+    module.exports = factory();
+} else if ((typeof(define) !== 'undefined' && define !== null) && (define.amd !== null)) {
+    define([], factory);
+} else {
+    // unsupported initialization
+}
+})();

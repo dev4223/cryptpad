@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 define([
     'jquery',
     '/common/hyperscript.js',
@@ -8,27 +12,23 @@ define([
     '/api/config',
     '/common/common-ui-elements.js',
     '/common/common-constants.js',
-], function ($, h, Msg, AppConfig, LocalStore, Pages, Config, UIElements, Constants) {
-    var accounts = Pages.accounts;
-
+    '/common/pad-types.js',
+    '/common/extensions.js',
+    '/common/common-icons.js'
+], function ($, h, Msg, AppConfig, LocalStore, Pages, Config, UIElements, Constants, PadTypes, Extensions, Icons) {
     return function () {
         document.title = Msg.features;
-        Msg.features_f_apps_note = AppConfig.availablePadTypes.map(function (app) {
+        Msg.features_f_apps_note = PadTypes.availableTypes.map(function (app) {
             if (AppConfig.registeredOnlyTypes.indexOf(app) !== -1) { return; }
             if (AppConfig.premiumTypes && AppConfig.premiumTypes.includes(app)) { return; }
             if (Constants.earlyAccessApps && Constants.earlyAccessApps.includes(app) &&
                   AppConfig.enableEarlyAccess) { return; }
             return Msg.type[app];
         }).filter(function (x) { return x; }).join(', ');
-        var premiumButton = h('a', {
-            href: accounts.upgradeURL,
-            target: '_blank',
-            rel: 'noopener noreferrer'
-        }, h('button.cp-features-register-button', Msg.features_f_subscribe));
 
         var groupItemTemplate = function (title, content) {
             return h('li.list-group-item', [
-                h('div.cp-check'),
+                Icons.get('check'),
                 h('div.cp-content', [
                     h('div.cp-feature', title),
                     h('div.cp-note', content),
@@ -114,44 +114,30 @@ define([
                     h('div.card-body',[
                         h('div.cp-features-register#cp-features-register', [
                             h('a', {
-                                href: '/register/'
-                            }, h('button.cp-features-register-button', Msg.features_f_register))
+                                href: '/register/',
+                                class: 'cp-features-register-button',
+                            }, Msg.features_f_register)
                         ]),
                     ]),
                 ]),
             ]);
-        var premiumFeatures =
-            h('div.col-12.col-sm-4.cp-anon-user',[
-                h('div.card',[
-                    h('div.title-card',[
-                        h('h3.text-center',Msg.features_premium)
-                    ]),
-                    h('div.card-body.cp-pricing',[
-                        h('div.text-center', h('a', {
-                            href: accounts.upgradeURL,
-                            target: '_blank'
-                        }, Msg._getKey('features_pricing', ['5', '10', '15']))),
-                        h('div.text-center', Msg.features_emailRequired),
-                    ]),
-                    h('ul.list-group.list-group-flush', [
-                        'reg', // Msg.features_f_reg, .features_f_reg_note
-                        'storage2',
-                        'support', // Msg.features_f_support, .features_f_support_note
-                        'supporter' // Msg.features_f_supporter, .features_f_supporter_note
-                    ].map(groupItem)),
-                    h('div.card-body',[
-                        h('div.cp-features-register#cp-features-subscribe', [
-                            premiumButton
-                        ]),
-                        LocalStore.isLoggedIn() ? undefined : h('div.cp-note', Msg.features_f_subscribe_note)
-                    ]),
-                ]),
-            ]);
+
         var availableFeatures = [
             anonymousFeatures,
             registeredFeatures,
-            Pages.areSubscriptionsAllowed() ? premiumFeatures: undefined,
         ];
+
+        // Msg.features_premium
+        // Msg.features_pricing
+        // Msg.features_emailRequired
+        // Msg.features_f_subscribe, .features_f_subscribe_note
+        // Msg.features_f_reg, .features_f_reg_note
+        // Msg.features_f_support, .features_f_support_note
+        // Msg.features_f_supporter, .features_f_supporter_note
+        Extensions.getExtensionsSync('EXTRA_PRICING').forEach(ext => {
+            if (!ext.getContent) { return; }
+            availableFeatures.push(ext.getContent(groupItem));
+        });
 
         return h('div#cp-main', [
             Pages.infopageTopbar(),

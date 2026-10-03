@@ -1,9 +1,14 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 define([
+    '/api/config',
     'jquery',
-    '/bower_components/chainpad-crypto/crypto.js',
+    '/components/chainpad-crypto/crypto.js',
     'chainpad-listmap',
     '/common/toolbar.js',
-    '/bower_components/nthen/index.js',
+    '/components/nthen/index.js',
     '/common/sframe-common.js',
     '/common/common-util.js',
     '/common/common-hash.js',
@@ -12,22 +17,17 @@ define([
     '/common/common-realtime.js',
     '/common/clipboard.js',
     '/common/inner/common-mediatag.js',
+    '/common/inner/badges.js',
     '/common/hyperscript.js',
     '/customize/messages.js',
     '/customize/application_config.js',
-    '/bower_components/marked/marked.min.js',
-    '/common/sframe-common-codemirror.js',
-    'cm/lib/codemirror',
+    '/components/marked/marked.min.js',
+    '/common/common-icons.js',
 
-    'cm/mode/markdown/markdown',
-
-    'css!/bower_components/codemirror/lib/codemirror.css',
-    'css!/bower_components/codemirror/addon/dialog/dialog.css',
-    'css!/bower_components/codemirror/addon/fold/foldgutter.css',
-    'css!/bower_components/bootstrap/dist/css/bootstrap.min.css',
-    'css!/bower_components/components-font-awesome/css/font-awesome.min.css',
+    'css!/components/bootstrap/dist/css/bootstrap.min.css',
     'less!/profile/app-profile.less',
 ], function (
+    ApiConfig,
     $,
     Crypto,
     Listmap,
@@ -41,13 +41,12 @@ define([
     Realtime,
     Clipboard,
     MT,
+    Badges,
     h,
     Messages,
     AppConfig,
     Marked,
-    SFCodeMirror,
-    CodeMirror
-    )
+    Icons)
 {
     var APP = window.APP = {
         _onRefresh: []
@@ -64,20 +63,32 @@ define([
         sanitize: true
     });
     // Tasks list
-    var checkedTaskItemPtn = /^\s*\[x\]\s*/;
-    var uncheckedTaskItemPtn = /^\s*\[ \]\s*/;
+    var checkedTaskItemPtn = /^\s*(<p>)?\[[xX]\](<\/p>)?\s*/;
+    var uncheckedTaskItemPtn = /^\s*(<p>)?\[ ?\](<\/p>)?\s*/;
+    var bogusCheckPtn = /<input checked="" disabled="" type="checkbox">/;
+    var bogusUncheckPtn = /<input disabled="" type="checkbox">/;
     renderer.listitem = function (text) {
         var isCheckedTaskItem = checkedTaskItemPtn.test(text);
         var isUncheckedTaskItem = uncheckedTaskItemPtn.test(text);
+        var hasBogusCheckedInput = bogusCheckPtn.test(text);
+        var hasBogusUncheckedInput = bogusUncheckPtn.test(text);
+        var isCheckbox = true;
         if (isCheckedTaskItem) {
             text = text.replace(checkedTaskItemPtn,
-                '<i class="fa fa-check-square" aria-hidden="true"></i>&nbsp;') + '\n';
-        }
-        if (isUncheckedTaskItem) {
+                '<i data-lucide="square-check" aria-hidden="true"></i>') + '\n';
+        } else if (isUncheckedTaskItem) {
             text = text.replace(uncheckedTaskItemPtn,
-                '<i class="fa fa-square-o" aria-hidden="true"></i>&nbsp;') + '\n';
+                '<i data-lucide="square" aria-hidden="true"></i>') + '\n';
+        } else if (hasBogusCheckedInput) {
+            text = text.replace(bogusCheckPtn,
+                '<i data-lucide="square-check" aria-hidden="true"></i>') + '\n';
+        } else if (hasBogusUncheckedInput) {
+            text = text.replace(bogusUncheckPtn,
+                '<i data-lucide="square" aria-hidden="true"></i>') + '\n';
+        } else {
+            isCheckbox = false;
         }
-        var cls = (isCheckedTaskItem || isUncheckedTaskItem) ? ' class="todo-list-item"' : '';
+        var cls = (isCheckbox) ? ' class="todo-list-item"' : '';
         return '<li'+ cls + '>' + text + '</li>\n';
     };
 
@@ -88,38 +99,47 @@ define([
     var CREATE_ID = "cp-app-profile-create";
     var HEADER_ID = "cp-app-profile-header";
     var HEADER_RIGHT_ID = "cp-app-profile-rightside";
-    var CREATE_INVITE_BUTTON = 'cp-app-profile-invite-button'; /* jshint ignore: line */
     var VIEW_PROFILE_BUTTON = 'cp-app-profile-viewprofile-button';
+    var PROFILE_SECTION = "cp-app-profile-section";
 
     var common;
     var sFrameChan;
 
     var addViewButton = function ($container) {
-        if (APP.readOnly) {
+        if (!APP.isOwnProfile) {
             return;
         }
 
         var hash = common.getMetadataMgr().getPrivateData().hashes.viewHash;
         var url = APP.origin + '/profile/#' + hash;
 
-        $('<button>', {
-            'class': 'btn '+VIEW_PROFILE_BUTTON,
-        }).text(Messages.profile_viewMyProfile).click(function () {
+        /*
+        var $blockView = $('<div>', {class: PROFILE_SECTION}).appendTo($container);
+        var button = h('button.btn.' + VIEW_PROFILE_BUTTON, {
+            'aria-labelledby': 'cp-profile-view-button'
+        }, [
+            h('span#cp-profile-view-button', Messages.profile_viewMyProfile)
+        ]);
+        $(button).click(function () {
             window.open(url, '_blank');
-        }).appendTo($container);
-
-        $('<button>', {
-            'class': 'btn btn-primary '+VIEW_PROFILE_BUTTON,
-        }).append(h('i.fa.fa-shhare-alt'))
-          .append(h('span', Messages.shareButton))
-          .click(function () {
-            var success = Clipboard.copy(url);
-            if (success) { UI.log(Messages.shareSuccess); }
-        }).appendTo($container);
+        }).appendTo($blockView);
+        */
+        var $blockShare = $('<div>', {class: PROFILE_SECTION}).appendTo($container);
+        var buttonS = h('button.btn.btn-primary.' + VIEW_PROFILE_BUTTON, {
+            'aria-labelledby': 'cp-profile-share-button'
+        }, [
+            Icons.get('share'),
+            h('span#cp-profile-share-button', Messages.shareButton)
+        ]);
+        $(buttonS).click(function () {
+            Clipboard.copy(url, (err) => {
+                if (!err) { UI.log(Messages.shareSuccess); }
+            });
+        }).appendTo($blockShare);
     };
 
     var addDisplayName = function ($container) {
-        var $block = $('<div>', {id: DISPLAYNAME_ID}).appendTo($container);
+        var $block = $('<div>', {'class': PROFILE_SECTION}).appendTo($container);
         APP.$name = $('<span>', {'class': DISPLAYNAME_ID}).appendTo($block);
     };
     var refreshName = function (data) {
@@ -127,7 +147,7 @@ define([
     };
 
     var addLink = function ($container) {
-        var $block = $('<div>', {id: LINK_ID}).appendTo($container);
+        var $block = $('<div>', {class: PROFILE_SECTION}).appendTo($container);
 
         APP.$link = $('<a>', {
             'class': LINK_ID,
@@ -143,57 +163,25 @@ define([
             common.openUnsafeURL(href);
         });
 
-        APP.$linkEdit = $();
-        if (APP.readOnly) { return; }
-
-        var button = h('button.btn', {
-            title: Messages.clickToEdit
-        }, Messages.profile_addLink);
-        APP.$linkEdit = $(button);
-        $block.append(button);
-        var save = h('button.btn.btn-primary', Messages.settings_save);
-        var text = h('input');
-        var code = h('div.cp-app-profile-link-code', [
-            text,
-            save
-        ]);
-        var div = h('div.cp-app-profile-link-edit', [
-            code
-        ]);
-        $block.append(div);
-        $(button).click(function () {
-            $(text).val(APP.$link.attr('href'));
-            $(code).css('display', 'flex');
-            APP.editor.refresh();
-            $(button).hide();
-        });
-        $(save).click(function () {
-            $(save).hide();
-            APP.module.execCommand('SET', {
-                key: 'url',
-                value: $(text).val()
-            }, function (data) {
-                APP.updateValues(data);
-                $(code).hide();
-                $(button).show();
-                $(save).show();
-            });
-        });
     };
     var refreshLink = function (data) {
-        APP.$linkEdit.removeClass('fa-pencil').removeClass('fa');
         if (!data.url) {
-            APP.$linkEdit.text(Messages.profile_addLink);
+            return void APP.$link.hide();
+        }
+        // Only show valid URLs
+        try {
+            new URL(data.url);
+        } catch (e) {
             return void APP.$link.hide();
         }
         APP.$link.attr('href', data.url).text(data.url).show();
-        APP.$linkEdit.text('').addClass('fa fa-pencil');
     };
 
     var addFriendRequest = function ($container) {
         if (!APP.readOnly || !APP.common.isLoggedIn()) { return; }
+        var $block = $('<div>', {class: PROFILE_SECTION}).appendTo($container);
         APP.$friend = $(h('div.cp-app-profile-friend-container'));
-        $container.append(APP.$friend);
+        $block.append(APP.$friend);
     };
     var refreshFriendRequest = function (data) {
         if (!APP.$friend) { return; }
@@ -214,14 +202,16 @@ define([
         if (friends[data.curvePublic]) {
             // Add friend message
             APP.$friend.append(h('p.cp-app-profile-friend', [
-                h('i.fa.fa-address-book'),
+                Icons.get('contacts-book'),
                 Messages._getKey('isContact', [name])
             ]));
             if (!friends[data.curvePublic].notifications) { return; }
             // Add unfriend button
-            var unfriendButton = h('button.btn.btn-primary.cp-app-profile-friend-request', [
-                h('i.fa.fa-user-times'),
-                Messages.contacts_remove
+            var unfriendButton = h('button.btn.btn-primary.cp-app-profile-friend-request', {
+                'aria-labelledby': 'cp-profile-unfriend-button'
+            }, [
+                Icons.get('unfriend'),
+                h('span#cp-profile-unfriend-button', Messages.contacts_remove)
             ]);
             $(unfriendButton).click(function () {
                 // Unfriend confirm
@@ -239,14 +229,14 @@ define([
         }
 
         var button = h('button.btn.btn-success.cp-app-profile-friend-request', [
-            h('i.fa.fa-user-plus'),
+            Icons.get('add-friend'),
         ]);
         var $button = $(button).appendTo(APP.$friend);
 
         // If this curve has sent us a friend request, we should not be able to sent it to them
         var friendRequests = common.getFriendRequests();
         if (friendRequests[data.curvePublic]) {
-            $button.append(Messages._getKey('friendRequest_received', [name || Messages.anonymous]))
+            $button.append(UI.setHTML(h('span'), Messages._getKey('friendRequest_received', [name || Messages.anonymous])))
                 .click(function () {
                 UIElements.displayFriendRequestModal(common, friendRequests[data.curvePublic]);
             });
@@ -254,9 +244,11 @@ define([
         }
 
         var addCancel = function () {
-            var cancelButton = h('button.btn.btn-danger.cp-app-profile-friend-request', [
-                h('i.fa.fa-user-times'),
-                Messages.cancel
+            var cancelButton = h('button.btn.btn-danger.cp-app-profile-friend-request', { 
+                'aria-labelledby': 'cp-profile-cancel-button' 
+            },[
+                Icons.get('unfriend'),
+                h('span#cp-profile-cancel-button' , Messages.cancel)
             ]);
             $(cancelButton).click(function () {
                 // Unfriend confirm
@@ -284,7 +276,7 @@ define([
             return;
         }
         // This is not a friend yet: we can send a friend request
-        $button.text(Messages._getKey('userlist_addAsFriendTitle', [data.name || Messages.anonymous]))
+        $button.empty().append([Icons.get('add-friend'), h('span', Messages._getKey('userlist_addAsFriendTitle', [data.name || Messages.anonymous]))])
             .click(function () {
                 APP.common.sendFriendRequest({
                     curvePublic: data.curvePublic,
@@ -298,7 +290,7 @@ define([
 
     var addMuteButton = function ($container) {
         if (!APP.readOnly || !APP.common.isLoggedIn()) { return; }
-        APP.$mute = $(h('div.cp-app-profile-mute-container'));
+        APP.$mute = $(h('div.cp-app-profile-mute-container.cp-app-profile-section'));
         $container.append(APP.$mute);
     };
     var refreshMute = function (data) {
@@ -310,7 +302,6 @@ define([
             return;
         }
 
-
         // Add mute/unmute buttons
         var $mute = APP.$mute;
         var module = common.makeUniversal('messenger');
@@ -319,9 +310,11 @@ define([
             $mute.html('');
             var isMuted = muted[data.curvePublic];
             if (isMuted) {
-                var unmuteButton = h('button.btn.btn-secondary.cp-app-profile-friend-request', [
-                    h('i.fa.fa-bell'),
-                    Messages.contacts_unmute || 'unmute'
+                var unmuteButton = h('button.btn.btn-secondary.cp-app-profile-friend-request', { 
+                    'aria-labelledby': 'cp-profile-unmute-button'
+                }, [
+                    Icons.get('notification'),
+                    h('span#cp-profile-unmute-button', Messages.contacts_unmute || 'unmute')
                 ]);
                 $(unmuteButton).click(function () {
                     module.execCommand('UNMUTE_USER', data.curvePublic, function (e) {
@@ -331,10 +324,12 @@ define([
                 }).appendTo($mute);
                 return;
             }
-            var muteButton = h('button.btn.btn-danger-outline.cp-app-profile-friend-request', [
-                h('i.fa.fa-bell-slash'),
-                Messages.contacts_mute || 'mute'
-            ]);
+            var muteButton = h('button.btn.btn-danger-outline.cp-app-profile-friend-request', {
+                 'aria-labelledby': 'cp-profile-mute-button'
+                }, [
+                    Icons.get('mute'),
+                    h('span#cp-profile-mute-button', Messages.contacts_mute || 'mute')
+                ]);
             $(muteButton).click(function () {
                 module.execCommand('MUTE_USER', {
                     curvePublic: data.curvePublic,
@@ -349,137 +344,62 @@ define([
         });
     };
 
-    var displayAvatar = function (val) {
-        var sframeChan = common.getSframeChannel();
+    var displayAvatar = function (val, data, badgeOK) {
         var $span = APP.$avatar;
-        $span.html('');
-        if (!val) {
-            $('<img>', {
-                src: '/customize/images/avatar.png',
-                title: Messages.profile_defaultAlt,
-                alt: Messages.profile_defaultAlt,
-            }).appendTo($span);
+        $span.empty();
+        const badge = data?.badge;
+        if (badge && !badgeOK) {
+            if (!data.proof || !data.edPublic) {
+                return displayAvatar(val);
+            }
+            var metadataMgr = common.getMetadataMgr();
+            var privateData = metadataMgr.getPrivateData();
+            APP.badge.execCommand('CHECK_BADGE', {
+                badge: badge,
+                //channel: privateData.channel,
+                ed: data.edPublic,
+                sig: data.proof,
+                nid: privateData.channel
+            }, res => {
+                if (!res?.verified) {
+                    if (Badges.safeBadges.includes(data.badge)) {
+                        delete data.badge;
+                    } else {
+                        data.badge = 'error';
+                    }
+                    displayAvatar(val, data, true);
+                    return;
+                }
+                displayAvatar(val, data, true);
+            });
             return;
         }
-        common.displayAvatar($span, val);
-
-        if (APP.readOnly) { return; }
-
-        var $delButton = $('<button>', {
-            'class': 'cp-app-profile-avatar-delete btn btn-danger fa fa-times',
-            title: Messages.fc_delete
-        });
-        $span.append($delButton);
-        $delButton.click(function () {
-            var old = common.getMetadataMgr().getUserData().avatar;
-            APP.module.execCommand("SET", {
-                key: 'avatar',
-                value: ""
-            }, function () {
-                sframeChan.query("Q_PROFILE_AVATAR_REMOVE", old, function (err, err2) {
-                    if (err || err2) { return void UI.log(err || err2); }
-                    displayAvatar();
-                });
-            });
-        });
+        const name = data?.name || Messages.anonymous;
+        common.displayAvatar($span, val, name, void 0,
+                void 0, badge);
     };
     var addAvatar = function ($container) {
         var $block = $('<div>', {id: AVATAR_ID}).appendTo($container);
-        APP.$avatar = $('<span>').appendTo($block);
-        var sframeChan = common.getSframeChannel();
+        APP.$avatar = $(h('span.cp-avatar')).appendTo($block);
         displayAvatar();
-        if (APP.readOnly) { return; }
-
-        var data = MT.addAvatar(common, function (ev, data) {
-            var old = common.getMetadataMgr().getUserData().avatar;
-            var todo = function () {
-                APP.module.execCommand("SET", {
-                    key: 'avatar',
-                    value: data.url
-                }, function () {
-                    sframeChan.query("Q_PROFILE_AVATAR_ADD", data.url, function (err, err2) {
-                        if (err || err2) { return void UI.log(err || err2); }
-                        displayAvatar(data.url);
-                    });
-                });
-            };
-            if (old) {
-                sframeChan.query("Q_PROFILE_AVATAR_REMOVE", old, function (err, err2) {
-                    if (err || err2) { return void UI.log(err || err2); }
-                    todo();
-                });
-                return;
-            }
-            todo();
-        });
-        var $upButton = common.createButton('upload', false, data);
-        $upButton.removeProp('title');
-        $upButton.text(Messages.profile_upload);
-        $upButton.prepend($('<span>', {'class': 'fa fa-upload'}));
-        $block.append($upButton);
     };
     var refreshAvatar = function (data) {
-        displayAvatar(data.avatar);
+        displayAvatar(data.avatar, data);
     };
+
 
     var addDescription = function ($container) {
-        var $block = $('<div>', {id: DESCRIPTION_ID, class:'cp-sidebarlayout-element'}).appendTo($container);
+        var $block = $('<div>', {id: DESCRIPTION_ID, class: PROFILE_SECTION}).appendTo($container);
 
-        APP.$description = $('<div>', {'class': 'cp-app-profile-description-rendered'}).appendTo($block);
+        APP.$description = $('<div>', {
+            'id': 'cp-app-profile-description-info'
+        }).appendTo($block);
+
         APP.$descriptionEdit = $();
-        if (APP.readOnly) { return; }
-
-        var button = h('button.btn.btn-primary', [
-            h('i.fa.fa-pencil'),
-            h('span', Messages.profile_addDescription)
-        ]);
-        APP.$descriptionEdit = $(button);
-        var save = h('button.btn.btn-primary', Messages.settings_save);
-        var text = h('textarea');
-        var code = h('div.cp-app-profile-description-code', [
-            text,
-            h('br'),
-            save
-        ]);
-        var div = h('div.cp-app-profile-description-edit', [
-            h('p.cp-app-profile-info', Messages.profile_info),
-            button,
-            code
-        ]);
-        $block.append(div);
-
-        var cm = SFCodeMirror.create("gfm", CodeMirror, text);
-        var editor = APP.editor = cm.editor;
-        editor.setOption('lineNumbers', true);
-        editor.setOption('lineWrapping', true);
-        editor.setOption('styleActiveLine', true);
-        editor.setOption('readOnly', false);
-        cm.configureTheme(common, function () {});
-
-        var markdownTb = common.createMarkdownToolbar(editor);
-        $(code).prepend(markdownTb.toolbar);
-        $(markdownTb.toolbar).show();
-
-        $(button).click(function () {
-            $(code).show();
-            APP.editor.refresh();
-            $(button).hide();
-        });
-        $(save).click(function () {
-            $(save).hide();
-            APP.module.execCommand('SET', {
-                key: 'description',
-                value: editor.getValue()
-            }, function (data) {
-                APP.updateValues(data);
-                $(code).hide();
-                $(button).show();
-                $(save).show();
-            });
-        });
     };
     var refreshDescription = function (data) {
-        var val = Marked(data.description || "");
+        var descriptionData = data.description || "";
+        var val = Marked.parse(descriptionData);
         APP.$description.html(val);
         APP.$description.off('click');
         APP.$description.click(function (e) {
@@ -502,12 +422,14 @@ define([
         if (!APP.readOnly) { return; }
         if (!Messages.profile_copyKey) { return; }
 
-        var $div = $(h('div.cp-sidebarlayout-element')).appendTo($container);
+        var $div = $(h('div.cp-app-profile-section')).appendTo($container);
         APP.$edPublic = $('<button>', {
             'class': 'btn',
-        }).append(h('i.fa.fa-key'))
-          .append(h('span', Messages.profile_copyKey))
-          .click(function () {
+            'aria-labelledby': 'cp-profile-copy-key-button'
+        }).append([
+            Icons.get('key'),
+            h('span#cp-profile-copy-key-button', Messages.profile_copyKey)
+        ]).click(function () {
             if (!APP.getEdPublic) { return; }
             APP.getEdPublic();
         }).appendTo($div).hide();
@@ -519,16 +441,42 @@ define([
         APP.getEdPublic = function () {
             var metadataMgr = APP.common.getMetadataMgr();
             var privateData = metadataMgr.getPrivateData();
+            const data = APP._lastUpdate;
             var url = Hash.getPublicSigningKeyString(privateData.origin, data.name, data.edPublic);
-            var success = Clipboard.copy(url);
-            if (success) { UI.log(Messages.genericCopySuccess); }
+            Clipboard.copy(url, (err) => {
+                if (!err) { UI.log(Messages.genericCopySuccess); }
+            });
         };
+    };
+
+    var addCopyData = function ($container) {
+        if (!APP.isModerator) { return; }
+        var $block = $('<div>', {class:PROFILE_SECTION}).appendTo($container);
+        APP.$copyData = $(h('button.btn.btn-secondary', { 
+            'aria-labelledby': 'cp-profile-copy-data-button' 
+        }, [   
+            Icons.get('copy'),
+            h('span#cp-profile-copy-data-button', Messages.support_copyUserData)
+        ])).click(function () {
+            if (!APP.getCopyData) { return; }
+            APP.getCopyData();
+        }).appendTo($block).hide();
+    };
+    var setCopyDataButton = function (data) {
+        if (!data.curvePublic) { return; }
+        APP.getCopyData = function () {
+            if (!APP.isModerator) { return void UI.warn(Messages.error); }
+            Clipboard.copy(JSON.stringify(data), (err) => {
+                if (!err) { UI.log(Messages.genericCopySuccess); }
+            });
+        };
+        if (APP.$copyData) { APP.$copyData.show(); }
     };
 
     var createLeftside = function () {
         var $categories = $('<div>', {'class': 'cp-sidebarlayout-categories'}).appendTo(APP.$leftside);
         var $category = $('<div>', {'class': 'cp-sidebarlayout-category'}).appendTo($categories);
-        $category.append($('<span>', {'class': 'fa fa-user'}));
+        $category.append(Icons.get('user-account'));
         $category.addClass('cp-leftside-active');
         $category.text(Messages.profileButton);
     };
@@ -544,22 +492,28 @@ define([
             addLink($rightside);
             addFriendRequest($rightside);
             addMuteButton($rightside);
-            addDescription(APP.$rightside);
             addPublicKey($rightside);
+            addCopyData($rightside);
             addViewButton($rightside);
+            addDescription($rightside);
             APP.initialized = true;
             createLeftside();
         }
     };
 
-    var updateValues = APP.updateValues = function (data) {
+    var updateValues = APP.updateValues = function (_data) {
+        const data = Util.clone(_data);
+        // Only update avatar if it has changed
         refreshAvatar(data);
+        // Always update other profile information
         refreshName(data);
         refreshLink(data);
         refreshDescription(data);
         refreshFriendRequest(data);
         refreshMute(data);
         setPublicKeyButton(data);
+        setCopyDataButton(data);
+        APP._lastUpdate = data;
     };
 
     var createToolbar = function () {
@@ -570,6 +524,7 @@ define([
             $container: APP.$toolbar,
             pageTitle: Messages.profileButton,
             metadataMgr: common.getMetadataMgr(),
+            skipLink: '#cp-sidebarlayout-container'
         };
         APP.toolbar = Toolbar.create(configTb);
         APP.toolbar.$rightside.hide();
@@ -607,6 +562,9 @@ define([
         APP.origin = privateData.origin;
         APP.readOnly = privateData.readOnly;
 
+        let edPublic = privateData.edPublic;
+        APP.isModerator = ApiConfig.moderatorKeys && ApiConfig.moderatorKeys.includes(edPublic);
+
         common.setTabTitle(Messages.profileButton);
         // If not logged in, you can only view other users's profile
         if (!privateData.readOnly && !common.isLoggedIn()) {
@@ -624,8 +582,11 @@ define([
             return;
         }
 
+        APP.badge = common.makeUniversal('badge', {
+            onEvent: onEvent
+        });
         if (privateData.isOwnProfile) {
-
+            APP.isOwnProfile = true;
             APP.module = common.makeUniversal('profile', {
                 onEvent: onEvent
             });
@@ -633,7 +594,6 @@ define([
 
             init();
 
-            console.log('POST SUBSCRIBE');
             execCommand('SUBSCRIBE', null, function (obj) {
                 updateValues(obj);
                 UI.removeLoadingScreen();
@@ -679,6 +639,8 @@ define([
             if (JSON.stringify(lm.proxy) === '{}') {
                 return void onCorruptedCache();
             }
+            // Force avatar update on initial load
+            APP._lastUpdate = null;
             updateValues(lm.proxy);
             UI.removeLoadingScreen();
             common.mailbox.subscribe(["notifications"], {

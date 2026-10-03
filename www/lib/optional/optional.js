@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: CC-BY-SA-3.0
+// SPDX-FileCopyrightText: 2014 LordOfThePigs https://stackoverflow.com/a/27422370
+
 define("optional", [], {
     load : function (moduleName, parentRequire, onload, config){
 
@@ -10,7 +13,7 @@ define("optional", [], {
         var onLoadFailure = function(err){
             // optional module failed to load.
             var failedId = err.requireModules && err.requireModules[0];
-            console.warn("Could not load optional module: " + failedId);
+            //console.warn("Could not load optional module: " + failedId);
 
             // Undefine the module to cleanup internal stuff in requireJS
             requirejs.undef(failedId);

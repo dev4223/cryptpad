@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 define([
     'jquery',
     '/common/common-util.js',
@@ -5,7 +9,7 @@ define([
     '/common/common-interface.js',
     '/common/common-ui-elements.js',
     '/customize/messages.js',
-    '/bower_components/nthen/index.js',
+    '/components/nthen/index.js',
 ], function ($, Util, Hash, UI, UIElements, Messages, nThen) {
     var Modal = {};
 
@@ -29,6 +33,24 @@ define([
             if (redraw) { Env.evRedrawAll.fire(redraw); }
         }));
     };
+    Modal.getOtherChans = (priv, opts) => {
+        // "attributes" contains the additional channels that the other user
+        // has to store (rtChannel, answersChannels, lastVersion, lastCpHash)
+        // - opts.attributes when access modal is created from the drive
+        // - liveAttr when access modal is created from the document
+        let liveAttr = Util.clone(priv.propChannels || {});
+        delete liveAttr.channel;
+        let attributes = opts.attributes || liveAttr;
+
+        // "otherChan" contains the list of channels that should also receive
+        // the ownership changes
+        let otherChan = [];
+        if (attributes?.answersChannel) { otherChan.push(attributes.answersChannel); }
+        if (attributes?.rtChannel) { otherChan.push(attributes.rtChannel); }
+        if (!otherChan.length) { otherChan = undefined; }
+
+        return { otherChan, attributes };
+    };
     Modal.getPadData = function (Env, opts, _cb) {
         var cb = Util.once(Util.mkAsync(_cb));
         var common = Env.common;
@@ -42,11 +64,20 @@ define([
                 if (err || !val) {
                     if (opts.access) {
                         data.password = priv.password;
-                        // Access modal and the pad is not stored: we're not an owner
-                        // so we don't need the correct href, just the type
-                        var h = Hash.createRandomHash(priv.app, priv.password);
-                        data.fakeHref = true;
-                        data.href = base + priv.pathname + '#' + h;
+                        // Access modal and the pad is not stored: get the hashes from outer
+                        var hashes = priv.hashes || {};
+                        // For calendars, individual href is passed via opts
+                        if (priv.app === 'calendar') {
+                            data.href = opts.href;
+                        } else if (hashes.editHash || hashes.fileHash) {
+                            data.href = Hash.hashToHref(hashes.editHash || hashes.fileHash, priv.app);
+                        } else {
+                            data.href = undefined;
+                        }
+                        if (hashes.viewHash) {
+                            data.roHref = Hash.hashToHref(hashes.viewHash, priv.app);
+                        }
+                        data.isNotStored = true;
                     } else {
                         waitFor.abort();
                         return void cb(err || 'EEMPTY');

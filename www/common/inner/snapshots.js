@@ -1,11 +1,16 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 define([
     'jquery',
     '/common/common-interface.js',
     '/common/hyperscript.js',
     '/customize/messages.js',
-    '/bower_components/nthen/index.js',
-    '/bower_components/chainpad/chainpad.dist.js',
-], function ($, UI, h, Messages, nThen, ChainPad /* JsonOT */) {
+    '/components/nthen/index.js',
+    '/components/chainpad/chainpad.dist.js',
+    '/common/common-icons.js',
+], function ($, UI, h, Messages, nThen, ChainPad, Icons /* JsonOT */) {
     var Snapshots = {};
 
     Snapshots.create = function (common, config) {
@@ -71,7 +76,7 @@ define([
             var $actions = $(actions);
             var content = [
                 h('span.cp-toolbar-snapshots-info', [
-                    h('i.fa.fa-camera'),
+                    Icons.get('snapshot'),
                     h('span.cp-toolbar-snapshots-title', data.title + ' - ' + new Date(data.time).toLocaleString()),
                 ]),
                 actions
@@ -79,7 +84,7 @@ define([
 
             if (!config.readOnly) {
                 $(h('button.cp-toolbar-snapshots-restore', [
-                    h('i.fa.fa-check'),
+                    Icons.get('check'),
                     h('spap.cp-button-name', Messages.snapshots_restore)
                 ])).click(function () {
                     var closed = config.close(true, snapshot);
@@ -95,7 +100,7 @@ define([
 
 
             $(h('button.cp-toolbar-snapshots-close', [
-                h('i.fa.fa-times'),
+                Icons.get('close'),
                 h('spap.cp-button-name', Messages.snapshots_close)
             ])).click(function () {
                 $snap.hide();

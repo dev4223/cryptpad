@@ -1,3 +1,9 @@
+/*
+ * SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
 @import (reference) "./colortheme-all.less";
 @import (reference) "./variables.less";
 @import (reference) "./tools.less";
@@ -22,8 +28,12 @@
         }
         &.tui-full-calendar-content {
             font-size: @colortheme_app-font-size;
+            &:focus-visible {
+                outline: @variables_focus_style;
+            }
         }
         &[readonly] {
+            //margin-top:1rem;
             background-color: @cp_forms-readonly;
             border-color: @cp_forms-readonly-border;
             color: @cp_forms-fg;
@@ -53,9 +63,19 @@
             }
         }
     }
+    &.mfa-enabled {
+        span, i, svg {
+            color: @cp_settings_enabled;
+        }
+    }
+    &.mfa-disabled {
+        span, i, svg {
+            color: @cp_settings_disabled;
+        }
+    }
 
     textarea, div.cp-textarea {
-        padding: 8px;
+        padding: 8px @alertify_padding-base;
         &[readonly] {
             overflow: hidden;
             resize: none;
@@ -91,40 +111,58 @@
                 height: 100%;
                 border-bottom-left-radius: 3px;
                 border-bottom-right-radius: 3px;
-                background-color: @cp_buttons-primary;
+                background-color: @cp_buttons-default-color;
+                &.btn-primary, &.btn-secondary {
+                    background-color: @cp_buttons-primary;
+                }
                 &.danger, &.btn-danger, &.danger-alt, &.btn-danger-alt {
                     background-color: @cp_buttons-red;
                 }
             }
         }
     }
-    button.cp-button-confirm-placeholder:not(.new) {
-        margin-bottom: 3px !important;
+
+    // The following palette container is just for the UI components
+    // The specific colors you want to show have to be defined in your app
+    // using the classes .cp-palette-nocolor .cp-palette-color1 .cp-palette-color2 etc.
+    div.cp-palette-container {
+        display: flex;
+        justify-content: space-between;
+        .cp-palette-color {
+            display: inline-block;
+            border-radius: 50%;
+            height: 30px;
+            width: 30px;
+            text-align: center;
+            line-height: 30px;
+            color: @cp_kanban-fg;
+            border: 1px solid fade(@cp_kanban-fg, 40%);
+            &.svg { // tick on selected color
+                color: @cryptpad_text_col;
+            }
+            outline: none;
+            &:focus-visible {
+                outline: @variables_focus_style;
+            }
+        }
     }
 
     button.btn {
-
         background-color: @cp_buttons-cancel;
         box-sizing: border-box;
-        outline: 0;
+        display: inline-flex;
         align-items: center;
-        padding: 0 6px;
-        line-height: 36px;
+        justify-content: center;
+        line-height: 20px;
+        padding: 8px 6px;
         white-space: nowrap;
         text-align: center;
         text-transform: uppercase;
-        font-size: 14px;
+        font-size: @variables_button-font-size;
         text-decoration: none;
         cursor: pointer;
         border-radius: @variables_radius;
         transition: none;
-
-        i, .fa, .cptools {
-            &:not(.nomargin) {
-                margin-right: 5px;
-            }
-        }
-
         color: @cp_buttons-fg;
         border: 1px solid @cp_buttons-fg;
 
@@ -152,6 +190,24 @@
                 background-color: @cp_buttons-default;
             }
         }
+        &.btn-toolbar {
+            background-color: @cp_buttons-default-bg;
+            color: @cp_buttons-default-fg;
+            border-color: @cp_buttons-default-bg;
+            &:hover, &:not(:disabled):active, &:focus {
+                background-color: fade(@cryptpad_text_col, 20%);
+                border-color: @cryptpad_text_col;
+                color: @cryptpad_text_col;
+            }
+        }
+        &.btn-toolbar-alt {
+            border-color: @cp_buttons-default-alt-fg;
+            color: @cp_buttons-default-alt-fg;
+            background-color: @cp_buttons-default-alt-bg;
+            &:hover, &:not(:disabled):active, &:focus {
+                background-color: fade(@cryptpad_text_col, 20%);
+            }
+        }
 
         &.danger, &.btn-danger {
             background-color: @cp_buttons-red;
@@ -164,6 +220,7 @@
             }
         }
 
+
         &.danger-alt, &.btn-danger-alt, &.btn-danger-outline {
             border-color: @cp_buttons-red;
             color: @cp_buttons-red-text;
@@ -174,15 +231,29 @@
             }
         }
 
-        &.primary, &.btn-primary, &.btn-success {
+        &.primary, &.btn-primary, &.btn-success, &.disable-button {
             background-color: @cp_buttons-primary;
             color: @cp_buttons-primary-text;
             border-color: @cp_buttons-primary-border;
-            font-weight: bold;
             &:hover, &:not(:disabled):active, &:focus {
                 color: @cp_buttons-primary-text;
                 border-color: @cp_buttons-primary-border;
                 background-color: contrast(@cp_buttons-primary-text, darken(@cp_buttons-primary, 10%), lighten(@cp_buttons-primary, 10%));
+            }
+        }
+
+        &.btn-case {
+            text-transform: capitalize;
+            font-size: 16px;
+        }
+        &.btn-primary-alt {
+            background-color: @cryptpad_color_brand_300;
+            border-color: @cryptpad_color_brand_300;
+            color: @cryptpad_color_grey_800;
+            &:hover, &:not(:disabled):active, &:focus {
+                color: @cryptpad_color_grey_800;
+                border-color: @cryptpad_color_brand_300;
+                background-color: lighten(@cryptpad_color_brand_300, 5%);
             }
         }
 
@@ -212,11 +283,9 @@
         }
 
 
-
-        &:focus {
-            //border: 1px dotted @alertify-base;
-            box-shadow: 0px 0px 5px @cp_buttons-primary !important;
-            outline: none;
+        outline: none;
+        &:focus-visible {
+            outline: @variables_focus_style;
         }
         &::-moz-focus-inner {
             border: 0;
@@ -238,9 +307,6 @@
         font-size: 12px;
         padding: 5px;
         border-radius: @variables_radius;
-        i {
-            margin-right: 10px;
-        }
         &.cp-alert-top {
             margin-top: @alertify_padding-base;
         }
@@ -280,11 +346,6 @@
         &.dismissable {
             display: flex;
             align-items: center;
-            span.fa-times {
-                font-size: @colortheme_app-font-size;
-                margin-left: 20px;
-                cursor: pointer;
-            }
         }
     }
     .cp-banner {
@@ -326,6 +387,9 @@
                         svg {
                             fill: @cryptpad_text_col;
                         }
+                    }
+                    .flatpickr-monthDropdown-month {
+                        background: @cp_flatpickr-bg;
                     }
                 }
                 .flatpickr-current-month {

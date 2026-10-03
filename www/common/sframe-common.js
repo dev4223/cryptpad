@@ -1,19 +1,25 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 define([
     'jquery',
     '/api/config',
-    '/bower_components/nthen/index.js',
+    '/components/nthen/index.js',
     '/customize/messages.js',
     '/common/sframe-chainpad-netflux-inner.js',
-    '/common/outer/worker-channel.js',
+    '/common/events-channel.js',
     '/common/sframe-common-title.js',
     '/common/common-ui-elements.js',
     '/common/sframe-common-history.js',
     '/common/sframe-common-file.js',
     '/common/sframe-common-codemirror.js',
     '/common/sframe-common-cursor.js',
+    '/common/sframe-common-integration.js',
     '/common/sframe-common-mailbox.js',
     '/common/inner/cache.js',
     '/common/inner/common-mediatag.js',
+    '/common/inner/mfa.js',
     '/common/metadata-manager.js',
 
     '/customize/application_config.js',
@@ -26,8 +32,10 @@ define([
     '/common/common-feedback.js',
     '/common/common-language.js',
     '/common/common-constants.js',
-    '/bower_components/localforage/dist/localforage.min.js',
+    '/components/localforage/dist/localforage.min.js',
     '/common/hyperscript.js',
+    '/common/extensions.js',
+    '/common/common-icons.js'
 ], function (
     $,
     ApiConfig,
@@ -41,9 +49,11 @@ define([
     File,
     CodeMirror,
     Cursor,
+    Integration,
     Mailbox,
     Cache,
     MT,
+    MFA,
     MetadataMgr,
     AppConfig,
     Pages,
@@ -56,7 +66,9 @@ define([
     Language,
     Constants,
     localForage,
-    h
+    h,
+    Ext,
+    Icons
 ) {
     // Chainpad Netflux Inner
     var funcs = {};
@@ -79,6 +91,19 @@ define([
     funcs.getMetadataMgr = function () { return ctx.metadataMgr; };
     funcs.getSframeChannel = function () { return ctx.sframeChan; };
     funcs.getAppConfig = function () { return AppConfig; };
+
+    funcs.onAccountOnline = function (f) {
+        const metadataMgr = ctx.metadataMgr;
+        const cb = Util.once(f);
+        const todo = () => {
+            const priv = metadataMgr.getPrivateData();
+            if (priv.offline !== false) { return; }
+            cb(metadataMgr);
+            metadataMgr.off('change', todo);
+        };
+        metadataMgr.onChange(todo);
+        todo();
+    };
 
     funcs.isLoggedIn = function () {
         return ctx.metadataMgr.getPrivateData().loggedIn;
@@ -117,6 +142,7 @@ define([
     funcs.importMediaTagMenu = callWithCommon(MT.importMediaTagMenu);
     funcs.getMediaTagPreview = callWithCommon(MT.getMediaTagPreview);
     funcs.getMediaTag = callWithCommon(MT.getMediaTag);
+    funcs.totpSetup = callWithCommon(MFA.totpSetup);
 
     // Thumb
     funcs.displayThumbnail = callWithCommon(Thumb.displayThumbnail);
@@ -130,6 +156,9 @@ define([
 
     // Cursor
     funcs.createCursor = callWithCommon(Cursor.create);
+
+    // Integration
+    funcs.createIntegration = callWithCommon(Integration.create);
 
     // Files
     funcs.uploadFile = callWithCommon(File.uploadFile);
@@ -391,6 +420,22 @@ define([
         });
     };
 
+    funcs.openIntegrationChannel = function (saveChanges) {
+        var md = JSON.parse(JSON.stringify(ctx.metadataMgr.getMetadata()));
+        var channel = md.integration;
+        if (typeof(channel) !== 'string' || channel.length !== Hash.ephemeralChannelLength) {
+            channel = Hash.createChannelId(true); // true indicates that it's an ephemeral channel
+        }
+        if (md.integration !== channel) {
+            md.integration = channel;
+            ctx.metadataMgr.updateMetadata(md);
+            setTimeout(saveChanges);
+        }
+        ctx.sframeChan.query('Q_INTEGRATION_OPENCHANNEL', channel, function (err, obj) {
+            if (err || (obj && obj.error)) { console.error(err || (obj && obj.error)); }
+        });
+    };
+
     // CodeMirror
     funcs.initCodeMirrorApp = callWithCommon(CodeMirror.create);
 
@@ -412,7 +457,11 @@ define([
     };
 
     funcs.setLoginRedirect = function (page) {
-        ctx.sframeChan.query('EV_SET_LOGIN_REDIRECT', page);
+        // We have to logout before redirecting because otherwise Safari might keep
+        // the guest SharedWorker alive
+        funcs.logout(() => {
+            ctx.sframeChan.event('EV_SET_LOGIN_REDIRECT', page);
+        });
     };
 
     funcs.isPresentUrl = function (cb) {
@@ -426,6 +475,9 @@ define([
     funcs.handleNewFile = function (waitFor, config) {
         if (window.__CRYPTPAD_TEST__) { return; }
         var priv = ctx.metadataMgr.getPrivateData();
+        if (priv.isNewFile && priv.initialState) {
+            return void setTimeout(waitFor());
+        }
         if (priv.isNewFile) {
             var c = (priv.settings.general && priv.settings.general.creation) || {};
             // If this is a new file but we have a hash in the URL and pad creation screen is
@@ -671,10 +723,6 @@ define([
         return window.location.origin + '/bounce/#' + encodeURIComponent(url);
     };
     funcs.openUnsafeURL = function (url) {
-        var app = ctx.metadataMgr.getPrivateData().app;
-        if (app === "sheet") {
-            return void ctx.sframeChan.event('EV_OPEN_UNSAFE_URL', url);
-        }
         var bounceHref = window.location.origin + '/bounce/#' + encodeURIComponent(url);
         window.open(bounceHref);
     };
@@ -718,7 +766,9 @@ define([
             // Ctrl || Meta (mac)
             if (e.ctrlKey || (navigator.platform === "MacIntel" && e.metaKey)) {
                 // Ctrl+E: New pad modal
+                var priv = ctx.metadataMgr.getPrivateData();
                 if (e.which === 69 && isApp) {
+                    if (priv.app === 'form' && priv.readOnly && !priv.form_auditorHash && !priv.form_auditorKey) { return; }
                     e.preventDefault();
                     return void funcs.createNewPadModal();
                 }
@@ -739,6 +789,9 @@ define([
         var priv = ctx.metadataMgr.getPrivateData();
         return Util.checkRestrictedApp(app, AppConfig, ea, priv.plan, priv.loggedIn);
     };
+
+    funcs.getExtensions = Ext.getExtensions;
+    funcs.getExtensionsSync = Ext.getExtensionsSync;
 
     funcs.mailbox = {};
 
@@ -804,7 +857,9 @@ define([
             ctx.sframeChan.on("EV_PAD_NODATA", function () {
                 var error = Pages.setHTML(h('span'), Messages.safeLinks_error);
                 var i = error.querySelector('i');
-                if (i) { i.classList = 'fa fa-shhare-alt'; }
+                if (i) {
+                    $(i).empty().append(Icons.get('share'));
+                }
                 var a = error.querySelector('a');
                 if (a) {
                     a.setAttribute('href', Pages.localizeDocsLink("https://docs.cryptpad.org/en/user_guide/user_account.html#confidentiality"));
@@ -818,6 +873,28 @@ define([
 
             ctx.sframeChan.on("EV_RESTRICTED_ERROR", function () {
                 UI.errorLoadingScreen(Messages.restrictedError);
+            });
+
+            ctx.sframeChan.on("EV_DELETED_ERROR", function (reason) {
+                var obj = reason;
+                var viewer;
+                if (typeof(reason) === "object") {
+                    reason = obj.reason;
+                    viewer = obj.viewer;
+                }
+                funcs.onServerError({
+                    type: 'EDELETED',
+                    message: reason,
+                    viewer: viewer
+                });
+            });
+
+            ctx.sframeChan.on("EV_DRIVE_DELETED", function (reason) {
+                funcs.onServerError({
+                    type: 'EDELETED',
+                    drive: true,
+                    message: reason
+                });
             });
 
             ctx.sframeChan.on("EV_PAD_PASSWORD_ERROR", function () {
@@ -839,6 +916,10 @@ define([
                 UI.updateLoadingProgress(data);
             });
 
+            ctx.sframeChan.on('Q_LOADING_MISSING_AUTH', function (data, cb) {
+                UIElements.onMissingMFA(funcs, data, cb);
+            });
+
             ctx.sframeChan.on('EV_NEW_VERSION', function () {
                 // TODO lock the UI and do the same in non-framework apps
                 var $err = $('<div>').append(Messages.newVersionError);
@@ -855,17 +936,23 @@ define([
 
             ctx.sframeChan.on('EV_LOADING_ERROR', function (err) {
                 var msg = err;
-                if (err === 'DELETED') {
-                    // XXX You can still use the current version in read-only mode by pressing Esc.
+                if (err === 'DELETED' || (err && err.type === 'EDELETED')) {
+                    // You can still use the current version in read-only mode by pressing Esc.
                     // what if they don't have a keyboard (ie. mobile)
-                    msg = Messages.deletedError + '<br>' + Messages.errorRedirectToHome;
-                }
-                if (err === "INVALID_HASH") {
+                    if (err.type && err.message) {
+                        msg = UI.getDestroyedPlaceholderMessage(err.message, false, true);
+                    } else {
+                        msg = Messages.deletedError;
+                    }
+                    msg += '<br>' + Messages.errorRedirectToHome;
+                } else if (err === "INVALID_HASH") {
                     msg = Messages.invalidHashError;
+                } else if (err === 'ACCOUNT') { // block 404 but no placeholder
+                    msg = Messages.login_unhandledError;
                 }
                 UI.errorLoadingScreen(msg, false, function () {
                     funcs.gotoURL('/drive/');
-                });
+                }, true);
             });
 
             ctx.sframeChan.on('EV_UNIVERSAL_EVENT', function (obj) {
@@ -945,6 +1032,7 @@ define([
             } catch (e) {}
 
             ctx.sframeChan.on('EV_LOGOUT', function () {
+                if (window.CP_ownAccountDeletion) { return; }
                 $(window).on('keyup', function (e) {
                     if (e.keyCode === 27) {
                         UI.removeLoadingScreen();
@@ -971,14 +1059,29 @@ define([
                 UI.alert(Messages.chrome68);
             });
 
-            funcs.isPadStored(function (err, val) {
-                if (err || !val) { return; }
-                UIElements.displayCrowdfunding(funcs);
+            ctx.sframeChan.on('EV_IFRAME_TITLE', function (title) {
+                document.title = title;
             });
+
+            var showCrowdfunding = function () {
+                UIElements.displayCrowdfunding(funcs);
+            };
+            var privateData = ctx.metadataMgr.getPrivateData();
+            var isDriveContext = privateData.app === 'drive';
+            var isReadOnlyFormResponse = privateData.app === 'form' && privateData.readOnly && !privateData.form_auditorHash && !privateData.form_auditorKey;
+            var skipCrowdfunding = privateData.secureIframe === true || privateData.unsafeIframe === true || isReadOnlyFormResponse || isDriveContext;
+            if (!skipCrowdfunding) {
+                ctx.sframeChan.query('Q_CROWDFUNDING_INCREMENT_OPEN', {}, showCrowdfunding);
+            }
 
             ctx.sframeChan.ready();
 
             Mailbox.create(funcs);
+
+            // automatically configure all relative links in the inner iframe
+            // to point to the outer domain by adding a 'base' element to iframe's <head>
+            // https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+            document.head.appendChild(h('base', { href: ApiConfig.httpUnsafeOrigin }));
 
             cb(funcs);
         });

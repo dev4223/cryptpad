@@ -1,10 +1,13 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 define([
     'jquery',
     '/common/common-util.js',
     '/checkup/checkup-tools.js',
 
-    '/bower_components/tweetnacl/nacl-fast.min.js',
-    'css!/bower_components/components-font-awesome/css/font-awesome.min.css',
+    '/components/tweetnacl/nacl-fast.min.js',
     'less!/checkup/app-checkup.less',
 ], function ($, Util, Tools) {
     var postMessage = function (content) {

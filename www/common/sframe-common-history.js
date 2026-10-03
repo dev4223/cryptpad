@@ -1,14 +1,19 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 define([
     'jquery',
     '/common/common-interface.js',
     '/common/common-util.js',
     '/common/hyperscript.js',
     '/customize/messages.js',
-    '/bower_components/nthen/index.js',
-    //'/bower_components/chainpad-json-validator/json-ot.js',
+    '/components/nthen/index.js',
+    '/common/common-icons.js',
+    //'/components/chainpad-json-validator/json-ot.js',
 
-    '/bower_components/chainpad/chainpad.dist.js',
-], function ($, UI, Util, h, Messages, nThen, ChainPad /* JsonOT */) {
+    '/components/chainpad/chainpad.dist.js',
+], function ($, UI, Util, h, Messages, nThen, Icons, ChainPad /* JsonOT */) {
     //var ChainPad = window.ChainPad;
     var History = {};
 
@@ -80,7 +85,7 @@ define([
             try {
                 var val = JSON.parse(states[idx].getContent().doc);
                 var md = config.extractMetadata(val);
-                var users = Object.keys(md.users).sort();
+                var users = Object.keys(md.users || {}).sort();
                 return users.join();
             } catch (e) {
                 console.error(e);
@@ -158,7 +163,7 @@ define([
                     snapshotsEl.push(h('div.cp-history-snapshot', {
                         style: 'width:'+patchWidth+'%;left:'+(patchWidth * (i-1))+'%;',
                         title: snapshotsData[hash].title
-                    }, h('i.fa.fa-camera')));
+                    }, Icons.get('snapshot')));
                 }
                 if (config.drive) {
                     // Display only one bar, split by patch
@@ -208,6 +213,9 @@ define([
                 sharedFolder: config.sharedFolder
             }, function (err, data) {
                 if (err) { return void console.error(err); }
+                if (data && data.error) {
+                    return void cb(data.error);
+                }
                 if (!Array.isArray(data.messages)) { return void console.error('Not an array!'); }
                 lastKnownHash = data.lastKnownHash;
                 isComplete = data.isFull;
@@ -282,7 +290,16 @@ define([
         $bottom.hide();
         $cke.hide();
 
-        UI.spinner($hist).get().show();
+        var spinner = UI.makeSpinner($hist);
+        spinner.spin();
+
+        let closeAll = () => {
+            History.state = false;
+            $hist.hide();
+            $bottom.show();
+            $cke.show();
+            $(window).trigger('resize');
+        };
 
         var update = function (newRt) {
             realtime = newRt;
@@ -299,8 +316,8 @@ define([
         var loadMore = function (cb) {
             if (loading) { return; }
             loading = true;
-            $loadMore.find('.fa-ellipsis-h').hide();
-            $loadMore.find('.fa-refresh').show();
+            $loadMore.find('.cp-loadmore-ellipsis').hide();
+            $loadMore.find('.cp-loadmore-loading').show();
 
             loadMoreHistory(config, common, function (err, newRt, isFull) {
                 if (err === 'EFULL') {
@@ -311,8 +328,8 @@ define([
                 loading = false;
                 if (err) { return void console.error(err); }
                 update(newRt);
-                $loadMore.find('.fa-ellipsis-h').show();
-                $loadMore.find('.fa-refresh').hide();
+                $loadMore.find('.cp-loadmore-ellipsis').show();
+                $loadMore.find('.cp-loadmore-loading').hide();
                 get(c);
                 if (isFull) {
                     $loadMore.off('click').hide();
@@ -420,33 +437,33 @@ define([
             $hist.removeClass('cp-history-init');
 
             var fastPrev = h('button.cp-toolbar-history-previous', { title: Messages.history_fastPrev }, [
-                h('i.fa.fa-step-backward'),
-                h('i.fa.fa-users')
+                Icons.get('history-fast-prev'),
+                Icons.get('users')
             ]);
             var userPrev = h('button.cp-toolbar-history-previous', { title: Messages.history_userPrev }, [
-                h('i.fa.fa-step-backward'),
-                h('i.fa.fa-user')
+                Icons.get('history-prev'),
+                Icons.get('user-account')
             ]);
             var prev = h('button.cp-toolbar-history-previous', { title: Messages.history_prev }, [
-                h('i.fa.fa-step-backward')
+                Icons.get('history-prev'),
             ]);
             var fastNext = h('button.cp-toolbar-history-next', { title: Messages.history_fastNext }, [
-                h('i.fa.fa-users'),
-                h('i.fa.fa-step-forward'),
+                Icons.get('users'),
+                Icons.get('history-fast-next'),
             ]);
             var userNext = h('button.cp-toolbar-history-next', { title: Messages.history_userNext }, [
-                h('i.fa.fa-user'),
-                h('i.fa.fa-step-forward'),
+                Icons.get('user-account'),
+                Icons.get('history-next'),
             ]);
             var next = h('button.cp-toolbar-history-next', { title: Messages.history_next }, [
-                h('i.fa.fa-step-forward')
+                Icons.get('history-next'),
             ]);
             if (config.drive) {
                 fastNext = h('button.cp-toolbar-history-next', { title: Messages.history_next }, [
-                    h('i.fa.fa-fast-forward'),
+                    Icons.get('history-fast-next'),
                 ]);
                 fastPrev = h('button.cp-toolbar-history-previous', {title: Messages.history_prev}, [
-                    h('i.fa.fa-fast-backward'),
+                    Icons.get('history-fast-prev'),
                 ]);
             }
 
@@ -458,18 +475,18 @@ define([
             var $next = $(next);
 
             var _loadMore = h('button.cp-toolbar-history-loadmore', { title: Messages.history_loadMore }, [
-                h('i.fa.fa-ellipsis-h'),
-                h('i.fa.fa-refresh.fa-spin.fa-3x.fa-fw', { style: 'display: none;' })
+                Icons.get("ellipsis-horizontal", {class: 'cp-loadmore-ellipsis'}),
+                Icons.get('loading', { style: 'display: none;', class: 'cp-loadmore-loading' })
             ]);
 
-            var pos = h('span.cp-history-timeline-pos.fa.fa-caret-down');
+            var pos = h('span.cp-history-timeline-pos', [ Icons.get("history-timeline-position")]);
             var time = h('div.cp-history-timeline-time');
             $time = $(time);
             var timeline = h('div.cp-toolbar-history-timeline', [
                 h('div.cp-history-timeline-line', [
                     h('span.cp-history-timeline-legend', [
-                        h('i.fa.fa-users'),
-                        h('i.fa.fa-user')
+                        Icons.get('users'),
+                        Icons.get('user-account')
                     ]),
                     h('span.cp-history-timeline-loadmore', _loadMore),
                     h('span.cp-history-timeline-container', [
@@ -493,11 +510,12 @@ define([
 
             var snapshot = h('button', {
                 title: Messages.snapshots_new,
+                class: 'cp-history-create-snapshot',
             }, [
-                h('i.fa.fa-camera')
+                Icons.get('snapshot')
             ]);
             var share = h('button', { title: Messages.history_shareTitle }, [
-                h('i.fa.fa-shhare-alt'),
+                Icons.get('share'),
                 h('span', Messages.shareButton)
             ]);
             var restoreTitle = config.drive ? Messages.history_restoreDriveTitle
@@ -505,11 +523,11 @@ define([
             var restore = h('button', {
                 title: restoreTitle,
             }, [
-                h('i.fa.fa-check'),
+                Icons.get('history-restore'),
                 h('span', Messages.history_restore)
             ]);
             var close = h('button', { title: Messages.history_closeTitle }, [
-                h('i.fa.fa-times'),
+                Icons.get("close"),
                 h('span', Messages.history_close)
             ]);
             var actions = h('div.cp-toolbar-history-actions', [
@@ -563,11 +581,7 @@ define([
 
             var onKeyDown, onKeyUp;
             var closeUI = function () {
-                History.state = false;
-                $hist.hide();
-                $bottom.show();
-                $cke.show();
-                $(window).trigger('resize');
+                closeAll();
                 $(window).off('keydown', onKeyDown);
                 $(window).off('keyup', onKeyUp);
             };
@@ -617,7 +631,7 @@ define([
                     keys: [27],
                 }, {
                     className: 'primary',
-                    iconClass: '.fa.fa-camera',
+                    iconClass: 'snapshot',
                     name: Messages.snapshots_new,
                     onClick: function () {
                         var val = $input.val();
@@ -647,6 +661,7 @@ define([
                 states = [];
                 onClose();
                 closeUI();
+                UI.clearTooltipsDelay();
             });
             $(restore).click(function () {
                 var restorePrompt = config.drive ? Messages.history_restoreDrivePrompt
@@ -676,7 +691,12 @@ define([
         loadMoreHistory(config, common, function (err, newRt, isFull) {
             History.readOnly = common.getMetadataMgr().getPrivateData().readOnly;
             History.loading = false;
-            if (err) { throw new Error(err); }
+            if (err) {
+                console.error(err);
+                UI.warn(`${Messages.error}: ${err}`);
+                closeAll();
+                return;
+            }
             update(newRt);
             display();
             if (isFull) {

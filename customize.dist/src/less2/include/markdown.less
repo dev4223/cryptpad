@@ -1,3 +1,9 @@
+/*
+ * SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
 @import (reference) "./tools.less";
 
 .markdown_main() {
@@ -15,7 +21,14 @@
             margin-bottom: 10px !important;
         }
     }
-    // todo ul, ol
+
+    // fix silly spacing around sublists in "loose lists"
+    :is(ul, ol) li > p {
+        & + :is(ul, ol) {
+            margin-bottom: 1rem;
+        }
+    }
+
     // TOC
     div.cp-md-toc {
         background: @cp_markdown-bg;
@@ -86,9 +99,6 @@
             max-width: 250px;
             min-height: 38px;
             justify-content: center;
-            .fa {
-                margin-right: 5px;
-            }
             b {
                 margin-left: 5px;
                 white-space: nowrap;
@@ -119,7 +129,7 @@
             text {
                 &.taskText {
                     &[class*="doneText"], &[class*="activeText"] {
-                        fill: #444 !important; // XXX PR to mermaid or find a suitable variable
+                        fill: #444 !important; // TODO PR to mermaid or find a suitable variable
                     }
                 }
                 &.titleText {
@@ -197,16 +207,6 @@
         a {
             color: @cryptpad_text_col;
             font-size: 0.8em;
-            &.cp-remote-img::before { // .fa.fa-question-circle
-                font-family: FontAwesome;
-                //content: "\f08e\00a0";
-                content: "\f08e\00a0\00a0";
-            }
-            &.cp-learn-more::before { // .fa.fa-external-link
-                font-family: FontAwesome;
-                content: "\f059\00a0";
-                //content: "\f059\00a0\00a0";
-            }
         }
     }
 }
@@ -224,12 +224,6 @@
     }
     .todo-list-item {
         list-style: none;
-        position: relative;
-        .fa {
-            position: absolute;
-            margin-left: -17px;
-            margin-top: 4px;
-        }
     }
 
     .mediatag_cryptpad();
@@ -275,4 +269,41 @@
         }
     }
 }
+
+//reusable styling for the markdown toggle button across all apps
+.markdown-toolbar-button-style() {
+    padding: 0px 5px;
+    height: fit-content;
+    margin: 0;
+    line-height: unset;
+    border-radius: @variables_radius;
+    display: inline-flex;
+    gap: 5px;
+    text-transform: uppercase;
+    background-color: @cp_toolbar-bottom-bg;
+    border: 1px solid @cp_toolbar-bottom-bg;
+    color: @cp_toolbar-bottom-fg;
+    align-items: center;
+
+    &:hover {
+        background-color: fade(@cryptpad_text_col, 20%);
+        border-color: @cryptpad_text_col;
+        color: @cryptpad_text_col;
+    }
+    &:focus-visible {
+        outline: @variables_focus_style;
+        box-shadow: unset;
+    }
+
+    &.cp-toolbar-button-active {
+        background-color: @cp_toolbar-bg;
+        border-color: @cp_toolbar-fg;
+        color: @cp_toolbar-fg;
+
+        &:hover {
+            background-color: fade(@cryptpad_text_col, 20%);
+        }
+    }
+}
+
 

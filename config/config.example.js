@@ -1,4 +1,6 @@
-/* globals module */
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
 
 /*  DISCLAIMER:
 
@@ -48,7 +50,7 @@ module.exports = {
  */
     httpUnsafeOrigin: 'http://localhost:3000',
 
-/*  httpSafeOrigin is the URL that is used for the 'sandbox' described above.
+/*  httpSafeOrigin is the URL used for the 'sandbox' described above.
  *  If you're testing or developing with CryptPad on your local machine then
  *  it is appropriate to leave this blank. The default behaviour is to serve
  *  the main domain over port 3000 and to serve the sandbox content over port 3001.
@@ -70,12 +72,12 @@ module.exports = {
     // httpSafeOrigin: "https://some-other-domain.xyz",
 
 /*  httpAddress specifies the address on which the nodejs server
- *  should be accessible. By default it will listen on 127.0.0.1
- *  (IPv4 localhost on most systems). If you want it to listen on
- *  all addresses, including IPv6, set this to '::'.
+ *  should be accessible. By default it will listen on localhost
+ *  (IPv4 & IPv6 if enabled). If you want it to listen on
+ *  a specific address, specify it here. e.g '192.168.0.1'
  *
  */
-    //httpAddress: '::',
+    //httpAddress: 'localhost',
 
 /*  httpPort specifies on which port the nodejs server should listen.
  *  By default it will serve content over port 3000, which is suitable
@@ -85,12 +87,26 @@ module.exports = {
  */
     //httpPort: 3000,
 
-/*  httpSafePort allows you to specify an alternative port from which
- *  the node process should serve sandboxed assets. The default value is
- *  that of your httpPort + 1. You probably don't need to change this.
+/*  httpSafePort purpose is to emulate another origin for the sandbox when
+ *  you don't have two domains at hand (i.e. when httpSafeOrigin not defined).
+ *  It is meant to be used only in case where you are working on a local 
+ *  development instance. The default value is your httpPort + 1.
  *
  */
     //httpSafePort: 3001,
+
+/*  Websockets need to be exposed on a separate port from the rest of
+ *  the platform's HTTP traffic. Port 3003 is used by default.
+ *  You can change this to a different port if it is in use by a
+ *  different service, but under most circumstances you can leave this
+ *  commented and it will work.
+ *
+ *  In production environments, your reverse proxy (usually NGINX)
+ *  will need to forward websocket traffic (/cryptpad_websocket)
+ *  to this port.
+ *
+ */
+    // websocketPort: 3003,
 
 /*  CryptPad will launch a child process for every core available
  *  in order to perform CPU-intensive tasks in parallel.
@@ -101,14 +117,52 @@ module.exports = {
     // maxWorkers: 4,
 
     /* =====================
+     *       Sessions
+     * ===================== */
+
+    /*  Accounts can be protected with an OTP (One Time Password) system
+     *  to add a second authentication layer. Such accounts use a session
+     *  with a given lifetime after which they are logged out and need
+     *  to be re-authenticated. You can configure the lifetime of these
+     *  sessions here.
+     *
+     *  defaults to 7 days
+     */
+    //otpSessionExpiration: 7*24, // hours
+
+    /*  Registered users can be forced to protect their account
+     *  with a Multi-factor Authentication (MFA) tool like a TOTP
+     *  authenticator application.
+     *
+     *  defaults to false
+     */
+    //enforceMFA: false,
+
+    /* =====================
+     *       Privacy
+     * ===================== */
+
+    /*  Depending on where your instance is hosted, you may be required to log IP
+     *  addresses of the users who make a change to a document. This setting allows you
+     *  to do so. You can configure the logging system below in this config file.
+     *  Setting this value to true will include a log for each websocket connection
+     *  including this connection's unique ID, the user public key and the IP.
+     *  NOTE: this option requires a log level of "info" or below.
+     *
+     *  defaults to false
+     */
+    //logIP: false,
+
+    /* =====================
      *         Admin
      * ===================== */
 
     /*
      *  CryptPad contains an administration panel. Its access is restricted to specific
-     *  users using the following list.
+     *  users using the following list and the management interface on the instance.
      *  To give access to the admin panel to a user account, just add their public signing
-     *  key, which can be found on the settings page for registered users.
+     *  key, which can be found on the settings page for registered users. Access can be
+     *  revoked directly from the interface, unless you added the key below.
      *  Entries should be strings separated by a comma.
      *  adminKeys: [
      *      "[cryptpad-user1@my.awesome.website/YZgXQxKR0Rcb6r6CmxHPdAGLVludrAF2lEnkbx1vVOo=]",
@@ -138,7 +192,7 @@ module.exports = {
      *  This archived data still takes up space and so you'll probably still want to
      *  remove these files after a brief period.
      *
-     *  cryptpad/scripts/evict-inactive.js is intended to be run daily
+     *  cryptpad/scripts/evict-archived.js is intended to be run daily
      *  from a crontab or similar scheduling service.
      *
      *  The intent with this feature is to provide a safety net in case of accidental
@@ -202,8 +256,8 @@ module.exports = {
      */
     archivePath: './data/archive',
 
-    /*  CryptPad allows logged in users to request that particular documents be
-     *  stored by the server indefinitely. This is called 'pinning'.
+    /*  CryptPad allows logged in users to request that the server 
+     *  store particular documents indefinitely. This is called 'pinning'.
      *  Pin requests are stored in a pin-store. The location of this store is
      *  defined here.
      */

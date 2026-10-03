@@ -1,27 +1,52 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 define([
     'jquery',
+    '/api/config',
     '/common/common-util.js',
     '/common/common-hash.js',
     '/common/common-interface.js',
     '/common/hyperscript.js',
     '/common/media-tag.js',
+    '/common/inner/badges.js',
     '/customize/messages.js',
     '/customize/application_config.js',
+    '/common/common-icons.js',
 
-    '/bower_components/tweetnacl/nacl-fast.min.js',
-    '/bower_components/croppie/croppie.min.js',
-    '/bower_components/file-saver/FileSaver.min.js',
-    'css!/bower_components/croppie/croppie.css',
-], function ($, Util, Hash, UI, h, MediaTag, Messages, AppConfig) {
+    '/components/file-saver/FileSaver.min.js',
+    'css!/components/croppie/croppie.css',
+], function ($, ApiConfig, Util, Hash, UI, h, MediaTag, Badges,
+            Messages, AppConfig, Icons) {
     var MT = {};
-
-    var Nacl = window.nacl;
 
     // Configure MediaTags to use our local viewer
     // This file is loaded by sframe-common so the following config is used in all the inner apps
     if (MediaTag) {
+        // Firefox 121 introduces an issue with ligatures that requires an update to PDFjs
+        // See: https://github.com/cryptpad/cryptpad/issues/1362
+        // Unfortunately this updated PDFjs doesn't work with older browsers
+
+        let isModernFirefox = false;
+        try {
+            const isFirefox = navigator.userAgent.toLowerCase().includes('firefox');
+            if (isFirefox) {
+                let version = +navigator.userAgent.match(/rv:([0-9.]+)/)[1];
+                isModernFirefox = version >= 100;
+            }
+        } catch (e) {}
+        let isModernChromium = false;
+        try {
+            isModernChromium = navigator.userAgentData.brands.some(data => {
+                return data.brand === 'Chromium' && data.version >= 100;
+            });
+        } catch (e) {}
+
+        let path = 'legacy';
+        if (isModernFirefox || isModernChromium) { path = 'modern'; }
         MediaTag.setDefaultConfig('pdf', {
-            viewer: '/lib/pdfjs/web/viewer.html'
+            viewer: `${ApiConfig.httpSafeOrigin}/lib/pdfjs/${path}/web/viewer.html`
         });
         MediaTag.setDefaultConfig('download', {
             text: Messages.mediatag_saveButton,
@@ -98,8 +123,19 @@ define([
         if (!seed) { return; }
         return ANIMALS[seed % ANIMALS.length] || '';
     };
-
+    //this regex identifies both discord and unicode emojis (with optional skin tone modifiers) and complex zwj emoji sequences
+    const emojiWithZWJRegex = /(?:\p{Extended_Pictographic}(?:\p{Emoji_Modifier}|\uFE0F)?(?:\u200D\p{Extended_Pictographic}(?:\p{Emoji_Modifier}|\uFE0F)?)*|\p{Extended_Pictographic})/gu;
     var getPrettyInitials = MT.getPrettyInitials = function (name) {
+        let matches = name.match(emojiWithZWJRegex);
+        if (matches && name.startsWith(matches[0])) {
+            return matches[0];
+        }
+        else {
+            //this is for removing all trailing white characters and unnecessary/redundant emojis
+            name = name.replace(emojiWithZWJRegex, '');
+            name = name.replace(/\uFE0F/g, '').replace(/\u200D/g, '').replace(/\u2060/g, '');
+            name = name.trim();
+        }
         var parts = name.split(/\s+/);
         var text;
         if (parts.length > 1) {
@@ -114,8 +150,9 @@ define([
         return text;
     };
 
-    MT.displayAvatar = function (common, $container, href, name, _cb, uid) {
+    MT.displayAvatar = function (common, $container, href, name, _cb, uid, badge) {
         var cb = Util.once(Util.mkAsync(_cb || function () {}));
+        const badgeEl = badge ? Badges.render(badge) : undefined;
         var displayDefault = function () {
             var animal_avatar;
             if (uid && animal_avatars[uid]) {
@@ -141,6 +178,7 @@ define([
                 'aria-hidden': true,
             }).text(text);
             $container.append($avatar);
+            $container.append(badgeEl);
             if (uid && animal_avatar) {
                 animal_avatars[uid] = animal_avatar;
             }
@@ -152,7 +190,8 @@ define([
         if (avatars[href]) {
             var nodes = $.parseHTML(avatars[href]);
             var $el = $(nodes[0]);
-            $container.append($el);
+            $container.empty().append($el);
+            $container.append(badgeEl);
             return void cb($el);
         }
 
@@ -188,7 +227,8 @@ define([
                 if (typeof data !== "number") { return void displayDefault(); }
                 if (Util.bytesToMegabytes(data) > 0.5) { return void displayDefault(); }
                 var mt = UI.mediaTag(src, cryptKey);
-                var $img = $(mt).appendTo($container);
+                var $img = $(mt).appendTo($container.empty());
+                $container.append(badgeEl);
                 MT.displayMediatagImage(common, $img, function (err, $image) {
                     if (err) { return void console.error(err); }
                     centerImage($img, $image);
@@ -198,38 +238,40 @@ define([
     };
     var transformAvatar = function (file, cb) {
         if (file.type === 'image/gif') { return void cb(file); }
-        var $croppie = $('<div>', {
-            'class': 'cp-app-profile-resizer'
-        });
+        require(['/components/croppie/croppie.min.js'], function () {
+            var $croppie = $('<div>', {
+                'class': 'cp-app-profile-resizer'
+            });
 
-        if (typeof ($croppie.croppie) !== "function") {
-            return void cb(file);
-        }
+            if (typeof ($croppie.croppie) !== "function") {
+                return void cb(file);
+            }
 
-        var todo = function () {
-            UI.confirm($croppie[0], function (yes) {
-                if (!yes) { return; }
-                $croppie.croppie('result', {
-                    type: 'blob',
-                    size: {width: 300, height: 300}
-                }).then(function(blob) {
-                    blob.lastModifiedDate = new Date();
-                    blob.name = 'avatar';
-                    cb(blob);
+            var todo = function () {
+                UI.confirm($croppie[0], function (yes) {
+                    if (!yes) { return; }
+                    $croppie.croppie('result', {
+                        type: 'blob',
+                        size: {width: 300, height: 300}
+                    }).then(function(blob) {
+                        blob.lastModifiedDate = new Date();
+                        blob.name = 'avatar';
+                        cb(blob);
+                    });
                 });
-            });
-        };
+            };
 
-        var reader = new FileReader();
-        reader.onload = function(e) {
-            $croppie.croppie({
-                url: e.target.result,
-                viewport: { width: 100, height: 100 },
-                boundary: { width: 400, height: 300 },
-            });
-            todo();
-        };
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                $croppie.croppie({
+                    url: e.target.result,
+                    viewport: { width: 100, height: 100 },
+                    boundary: { width: 400, height: 300 },
+                });
+                todo();
+            };
         reader.readAsDataURL(file);
+        });
     };
     MT.addAvatar = function (common, cb) {
         var AVATAR_SIZE_LIMIT = 0.5;
@@ -237,6 +279,7 @@ define([
             'image/png',
             'image/jpeg',
             'image/jpg',
+            'image/webp',
             'image/gif',
         ];
         var fmConfig = {
@@ -246,7 +289,7 @@ define([
             onUploaded: cb
         };
         var FM = common.createFileManager(fmConfig);
-        var accepted = ".gif,.jpg,.jpeg,.png";
+        var accepted = ".gif,.jpg,.jpeg,.png,.webp";
         var data = {
             FM: FM,
             filter: function (file) {
@@ -290,11 +333,11 @@ define([
         modal.show();
         var $modal = modal.$modal.focus();
         var $container = $modal.find('.cp-modal').append([
-            h('div.cp-mediatag-control', left = h('span.fa.fa-chevron-left')),
+            h('div.cp-mediatag-control', left = Icons.get('chevron-left')),
             h('div.cp-mediatag-container', [
                 h('div.cp-loading-spinner-container', h('span.cp-spinner')),
             ]),
-            h('div.cp-mediatag-control', right = h('span.fa.fa-chevron-right')),
+            h('div.cp-mediatag-control', right = Icons.get('chevron-right')),
         ]);
         var $close = $modal.find('.cp-modal-close');
         var $left = $(left);
@@ -346,7 +389,7 @@ define([
                     var host = priv.fileHost || priv.origin || '';
                     src = host + Hash.getBlobPathFromHex(secret.channel);
                     var _key = secret.keys && secret.keys.cryptKey;
-                    if (_key) { key = 'cryptpad:' + Nacl.util.encodeBase64(_key); }
+                    if (_key) { key = 'cryptpad:' + Util.encodeBase64(_key); }
                 }
                 if (!src || !key) {
                     $spinner.hide();
@@ -443,37 +486,36 @@ define([
             }, [
                 h('li.cp-svg', h('a.cp-app-code-context-open.dropdown-item', {
                     'tabindex': '-1',
-                    'data-icon': "fa-eye",
-                }, Messages.pad_mediatagPreview)),
+                }, [
+                    Icons.get('preview'),
+                    Messages.pad_mediatagPreview
+                ])),
                 h('li', h('a.cp-app-code-context-openin.dropdown-item', {
                     'tabindex': '-1',
-                    'data-icon': "fa-external-link",
-                }, Messages.pad_mediatagOpen)),
+                }, [
+                    Icons.get('external-link'),
+                    Messages.pad_mediatagOpen
+                ])),
                 h('li', h('a.cp-app-code-context-share.dropdown-item', {
                     'tabindex': '-1',
-                    'data-icon': "fa-shhare-alt",
-                }, Messages.pad_mediatagShare)),
+                }, [
+                    Icons.get('share'),
+                    Messages.pad_mediatagShare
+                ])),
                 h('li', h('a.cp-app-code-context-saveindrive.dropdown-item', {
                     'tabindex': '-1',
-                    'data-icon': "fa-cloud-upload",
-                }, Messages.pad_mediatagImport)),
+                }, [
+                    Icons.get('cloud-upload'),
+                    Messages.pad_mediatagImport
+                ])),
                 h('li.cp-svg', h('a.cp-app-code-context-download.dropdown-item', {
                     'tabindex': '-1',
-                    'data-icon': "fa-download",
-                }, Messages.download_mt_button)),
+                },[
+                    Icons.get('download'),
+                    Messages.download_mt_button
+                ])),
             ])
         ]);
-        // create the icon for each contextmenu option
-        $(menu).find("li a.dropdown-item").each(function (i, el) {
-            var $icon = $("<span>");
-            if ($(el).attr('data-icon')) {
-                var font = $(el).attr('data-icon').indexOf('cptools') === 0 ? 'cptools' : 'fa';
-                $icon.addClass(font).addClass($(el).attr('data-icon'));
-            } else {
-                $icon.text($(el).text());
-            }
-            $(el).prepend($icon);
-        });
         var m = UI.createContextMenu(menu);
 
         mediatagContextMenu = m;

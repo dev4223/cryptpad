@@ -1,3 +1,9 @@
+/*
+ * SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
 @import (reference) "../include/infopages.less";
 @import (reference) "../include/colortheme-all.less";
 
@@ -9,12 +15,19 @@
         padding: 20px;
     }
     .cp-features-register-button {
+        text-decoration: none;
+        text-align: center;
+        background-color: @cp_buttons-primary;
+        color: @cryptpad_text_col_inv;
         font-size: 20px;
-        color: @cryptpad_color_white;
-        background: @cryptpad_color_brand;
-        border-radius: 0;
-        &:hover {
-            cursor: pointer;
+        margin: 10px 0;
+        border-radius: @infopages-radius;
+        padding: 10px 20px;
+        &:hover, &:focus {
+            background-color:  contrast(@cp_buttons-primary-text, darken(@cp_buttons-primary, 10%), lighten(@cp_buttons-primary, 10%));
+        }
+        &:visited {
+            color: @cryptpad_text_col_inv;
         }
     }
     .cp-features-web {
@@ -63,22 +76,15 @@
         .list-group {
             li {
                 display: flex;
+                align-items: center;
                 padding-left: 0;
                 padding-right: 5px;
+                svg {
+                    width: 30px;
+                    color: @cryptpad_color_brand;
+                }
             }
             div {
-                &.cp-check {
-                    width: 30px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    &:before {
-                        content: "\f00c";
-                        font-family: "FontAwesome";
-                        font-size: 14px;
-                        color: @cryptpad_color_brand;
-                    }
-                }
                 &.cp-content {
                     flex: 1;
                     display: flex;
@@ -104,6 +110,11 @@
     }
 
     .cp-regis-user {
+        @media (max-width:575px) {
+            margin-top: 3em;
+        }
+    }
+    .cp-premium-user {
         @media (max-width:575px) {
             margin-top: 3em;
         }

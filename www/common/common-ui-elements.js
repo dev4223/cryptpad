@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 define([
     'jquery',
     '/api/config',
@@ -13,13 +17,14 @@ define([
     '/customize/messages.js',
     '/customize/application_config.js',
     '/customize/pages.js',
-    '/bower_components/nthen/index.js',
+    '/components/nthen/index.js',
     '/common/inner/invitation.js',
     '/common/visible.js',
+    '/common/pad-types.js',
+    '/common/common-icons.js',
 
-    'css!/customize/fonts/cptools/style.css',
 ], function ($, Config, Broadcast, Util, Hash, Language, UI, Constants, Feedback, h, Clipboard,
-             Messages, AppConfig, Pages, NThen, InviteInner, Visible) {
+             Messages, AppConfig, Pages, NThen, InviteInner, Visible, PadTypes, Icons) {
     var UIElements = {};
     var urlArgs = Config.requireConf.urlArgs;
 
@@ -57,7 +62,6 @@ define([
                 existing = Object.keys(res.tags).sort();
             }));
         }).nThen(function (waitFor) {
-            var _err;
             hrefs.forEach(function (href) {
                 common.getPadAttribute('tags', waitFor(function (err, res) {
                     if (err) {
@@ -65,7 +69,6 @@ define([
                             UI.alert(Messages.tags_noentry);
                         }
                         waitFor.abort();
-                        _err = err;
                         return void console.error(err);
                     }
                     allTags[href] = res || [];
@@ -128,14 +131,8 @@ define([
     };
 
     var importContent = UIElements.importContent = function (type, f, cfg) {
-        return function () {
-            var $files = $('<input>', {type:"file"});
-            if (cfg && cfg.accept) {
-                $files.attr('accept', cfg.accept);
-            }
-            $files.click();
-            $files.on('change', function (e) {
-                var file = e.target.files[0];
+        return function (_file) {
+            var todo = function (file) {
                 var reader = new FileReader();
                 var parsed = file && file.name && /.+\.([^.]+)$/.exec(file.name);
                 var ext = parsed && parsed[1];
@@ -144,7 +141,19 @@ define([
                    reader.readAsArrayBuffer(file, type);
                 } else {
                    reader.readAsText(file, type);
-               }
+                }
+            };
+
+            if (_file) { return void todo(_file); }
+
+            var $files = $('<input>', {type:"file"});
+            if (cfg && cfg.accept) {
+                $files.attr('accept', cfg.accept);
+            }
+            $files.click();
+            $files.on('change', function (e) {
+                var file = e.target.files[0];
+                todo(file);
             });
         };
     };
@@ -163,9 +172,13 @@ define([
             common.displayAvatar($(avatar), data.avatar, name, Util.noop, data.uid);
             var removeBtn, el;
             if (config.remove) {
-                removeBtn = h('span.fa.fa-times');
-                $(removeBtn).click(function () {
-                    config.remove(el);
+                removeBtn = h('span',[Icons.get('close')]);
+                $(removeBtn).attr('tabindex', '0').attr('role', 'button');
+                $(removeBtn).on('click keydown', function(event) {
+                    if (event.type === 'click' || (event.type === 'keydown' && event.key === 'Enter')) {
+                        event.preventDefault();
+                        config.remove(el);
+                    }
                 });
             }
 
@@ -175,6 +188,7 @@ define([
                 'data-curve': data.curvePublic || '',
                 'data-name': name.toLowerCase(),
                 'data-order': i,
+                'tabindex': config.noSelect ? '-1' : '0',
                 style: 'order:'+i+';'
             },[
                 avatar,
@@ -185,7 +199,9 @@ define([
         }).filter(function (x) { return x; });
 
         var noOthers = icons.length === 0 ? '.cp-usergrid-empty' : '';
-        var classes = noOthers + (config.large?'.large':'') + (config.list?'.list':'');
+        var classes = noOthers + (config.large?'.large':'') +
+                                (config.list?'.list':'') +
+                                (config.radio?'.radio':'');
 
         var inputFilter = h('input', {
             placeholder: Messages.share_filterFriend
@@ -207,20 +223,31 @@ define([
                 $div.find('.cp-usergrid-user:not(.cp-selected):not([data-name*="'+name+'"])').hide();
             }
         };
-        $(inputFilter).on('keydown keyup change', redraw);
+        $(inputFilter).on('input keydown keyup change', redraw);
+        if (config.evOnFilter) {
+            config.evOnFilter.reg(redraw);
+        }
 
         $(div).append(h('div.cp-usergrid-grid', icons));
         if (!config.noSelect) {
             $div.on('click', '.cp-usergrid-user', function () {
                 var sel = $(this).hasClass('cp-selected');
+                if (config.radio) {
+                    $div.find('.cp-usergrid-user.cp-selected').removeClass('cp-selected');
+                }
                 if (!sel) {
                     $(this).addClass('cp-selected');
-                } else {
-                    var order = $(this).attr('data-order');
-                    order = order ? 'order:'+order : '';
-                    $(this).removeClass('cp-selected').attr('style', order);
+                } else if (!config.radio) {
+                    $(this).removeClass('cp-selected');
                 }
-                onSelect();
+                onSelect(!sel ? this : undefined);
+            });
+            $div.on('keydown', '.cp-usergrid-user', function (e) {
+                if (e.which === 13) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    $(this).trigger('click');
+                }
             });
         }
 
@@ -230,6 +257,55 @@ define([
         };
     };
 
+    UIElements.getUserTeamPicker = (common, config, onSelected) => {
+        const { msg, friendsData, teamsData } = config;
+        let teams;
+        const filter = h('input', {
+            placeholder: Messages.share_filterFriend
+        });
+        const evOnFilter = Util.mkEvent();
+        const contacts = UIElements.getUserGrid(Messages.contacts, {
+            common: common,
+            data: friendsData,
+            noFilter: false,
+            radio: true,
+            large: true,
+            evOnFilter
+        }, el => {
+            onSelected(el);
+            $(teams.div).find('.cp-selected').removeClass('cp-selected');
+        });
+        teams = UIElements.getUserGrid(Messages.teams, {
+            common: common,
+            data: teamsData,
+            noFilter: false,
+            radio: true,
+            large: true,
+            evOnFilter
+        }, el => {
+            onSelected(el);
+            $(contacts.div).find('.cp-selected').removeClass('cp-selected');
+        });
+
+        const $contactFilter = $(contacts.div).find('.cp-usergrid-filter input').hide();
+        const $teamFilter = $(teams.div).find('.cp-usergrid-filter input').hide();
+
+        $(filter).on('input', () => {
+            const val = filter.value;
+            $teamFilter.val(val);
+            $contactFilter.val(val);
+            evOnFilter.fire();
+        });
+
+        const content = h('div.cp-userteam-picker', [
+            h('div', msg),
+            h('div.cp-userteam-filter', filter),
+            contacts.div,
+            teams.div
+        ]);
+
+        return content;
+    };
 
     UIElements.noContactsMessage = function (common) {
         var metadataMgr = common.getMetadataMgr();
@@ -241,10 +317,12 @@ define([
                 buttons: [{
                     className: 'secondary',
                     name: Messages.share_copyProfileLink,
+                    iconClass: 'copy',
                     onClick: function () {
                         var profile = data.profile ? (origin + '/profile/#' + data.profile) : '';
-                        var success = Clipboard.copy(profile);
-                        if (success) { UI.log(Messages.shareSuccess); }
+                        Clipboard.copy(profile, (err) => {
+                            if (!err) { UI.log(Messages.shareSuccess); }
+                        });
                     },
                     keys: [13]
                   }]
@@ -306,6 +384,7 @@ define([
             $div.append(list.div);
             var contactsButtons = [{
                 className: 'primary',
+                iconClass: 'send',
                 name: Messages.team_inviteModalButton,
                 onClick: function () {
                     var $sel = $div.find('.cp-usergrid-user.cp-selected');
@@ -351,11 +430,22 @@ define([
             buttons: contactsButtons,
         });
 
-        var linkName, linkPassword, linkMessage, linkError, linkSpinText;
-        var linkForm, linkSpin, linkResult;
+        var linkName, linkPassword, linkMessage, linkError;
+        var linkForm, linkSpin, linkResult, linkUses, linkRole;
         var linkWarning;
         // Invite from link
-        var dismissButton = h('span.fa.fa-times');
+        var dismissButton = h('span', Icons.get('close'));
+
+        var roleViewer = UI.createRadio('cp-team-role', 'cp-team-role-viewer',
+                Messages.team_viewers, true, {
+                    input: { value: 'VIEWER' },
+                });
+        var roleMember = UI.createRadio('cp-team-role', 'cp-team-role-member',
+                Messages.team_members, false, {
+                    input: { value: 'MEMBER' },
+                });
+
+
         var linkContent = h('div.cp-share-modal', [
             h('p', Messages.team_inviteLinkTitle ),
             linkError = h('div.alert.alert-danger.cp-teams-invite-alert', {style : 'display: none;'}),
@@ -371,11 +461,11 @@ define([
                 h('br'),
                 h('div.cp-teams-invite-block', [
                     h('span', Messages.team_inviteLinkSetPassword),
-                    h('a.cp-teams-help.fa.fa-question-circle', {
-                        href: origin + Pages.localizeDocsLink('https://docs.cryptpad.org/en/user_guide/security.html#passwords-for-documents-and-folders'),
+                    h('a.cp-teams-help', {
+                        href: Pages.localizeDocsLink('https://docs.cryptpad.org/en/user_guide/security.html#passwords-for-documents-and-folders'),
                         target: "_blank",
                         'data-tippy-placement': "right"
-                    })
+                    }, Icons.get('circle-question'))
                 ]),
                 linkPassword = UI.passwordInput({
                     id: 'cp-teams-invite-password',
@@ -387,13 +477,27 @@ define([
                 linkMessage = h('textarea.cp-teams-invite-message', {
                     placeholder: Messages.team_inviteLinkNoteMsg,
                     rows: 3
-                })
+                }),
+                linkRole = h('div.cp-teams-invite-block.cp-teams-invite-role',
+                    h('span', Messages.team_inviteRole),
+                    roleViewer,
+                    roleMember
+                ),
+                h('div.cp-teams-invite-block.cp-teams-invite-uses',
+                    linkUses = h('input', {
+                        type: 'number',
+                        min: 0,
+                        max: 999,
+                        value: 1
+                    }),
+                    h('span', Messages.team_inviteUses)
+                ),
             ]),
             linkSpin = h('div.cp-teams-invite-spinner', {
                 style: 'display: none;'
             }, [
-                h('i.fa.fa-spinner.fa-spin'),
-                linkSpinText = h('span', Messages.team_inviteLinkLoading)
+                Icons.get('loading'),
+                h('span', Messages.team_inviteLinkLoading)
             ]),
             linkResult = h('div', {
                 style: 'display: none;'
@@ -407,10 +511,11 @@ define([
                 dismissButton
             ])
         ]);
+        $(linkUses).on('change keyup', function(e) {
+            if (e.target.value === '') { e.target.value = 0; }
+        });
         $(linkMessage).keydown(function (e) {
-            if (e.which === 13) {
-                e.stopPropagation();
-            }
+            if (e.which === 13) { e.stopPropagation(); }
         });
         var localStore = window.cryptpadStore;
         localStore.get('hide-alert-teamInvite', function (val) {
@@ -428,6 +533,12 @@ define([
             var $nav = $linkContent.closest('.alertify').find('nav');
             $(linkError).text('').hide();
             var name = $(linkName).val();
+
+            var uses = Number($(linkUses).val());
+            if (isNaN(uses) || !uses) { uses = -1; }
+
+            var role = $(linkRole).find("input[name='cp-team-role']:checked").val() || 'VIEWER';
+
             var pw = $(linkPassword).find('input').val();
             var msg = $(linkMessage).val();
             var hash = Hash.createRandomHash('invite', pw);
@@ -461,6 +572,8 @@ define([
                     hash: hash,
                     teamId: config.teamId,
                     seeds: seeds,
+                    role: role,
+                    uses: uses
                 }, waitFor(function (obj) {
                     if (obj && obj.error) {
                         waitFor.abort();
@@ -486,6 +599,7 @@ define([
         }, {
             className: 'primary cp-teams-invite-create',
             name: Messages.team_inviteLinkCreate,
+            iconClass: 'link',
             onClick: function () {
                 return process();
             },
@@ -493,10 +607,12 @@ define([
         }, {
             className: 'primary cp-teams-invite-copy',
             name: Messages.team_inviteLinkCopy,
+            iconClass: 'copy',
             onClick: function () {
                 if (!href) { return; }
-                var success = Clipboard.copy(href);
-                if (success) { UI.log(Messages.shareSuccess); }
+                Clipboard.copy(href, (err) => {
+                    if (!err) { UI.log(Messages.shareSuccess); }
+                });
             },
             keys: []
         }];
@@ -509,12 +625,12 @@ define([
         // Create modal
         var tabs = [{
             title: Messages.share_contactCategory,
-            icon: "fa fa-address-book",
+            icon: "contacts-book",
             content: frameContacts,
             active: hasFriends
         }, {
             title: Messages.share_linkCategory,
-            icon: "fa fa-link",
+            icon: "link",
             content: frameLink,
             active: !hasFriends
         }];
@@ -532,80 +648,88 @@ define([
         });
     };
 
+    UIElements.getEntryFromButton = function ($button) {
+        if (!$button || !$button.length) { return; }
+        let $icon = $button.children('svg,i,[data-lucide]').first();
+        if (!$icon.length) $icon = $button.find('svg,i,[data-lucide]').first();
+
+        let attributes = {};
+        let btnClass = $button.attr('class');
+        let btnId = $button.attr('id');
+        let btnTitle = $button.attr('title');
+        let btnVisibility = $button.attr('style');
+        if (btnClass) { attributes['class'] = btnClass; }
+        if (btnId) { attributes['id'] = btnId; }
+        if (btnTitle && !attributes.title) { attributes['title'] = btnTitle; }
+        if (btnVisibility) { attributes['style'] = btnVisibility; }
+        return UIElements.createDropdownEntry({
+            tag: 'a',
+            attributes: attributes,
+            content: [
+                $icon.length ? $icon.clone()[0] : null,
+                h('span', $button.text())
+            ],
+            action: function () {
+                $button.click();
+                return true;
+            }
+        });
+    };
+
+
     UIElements.createButton = function (common, type, rightside, data, callback) {
         var AppConfig = common.getAppConfig();
         var button;
         var sframeChan = common.getSframeChannel();
         var appType = (common.getMetadataMgr().getMetadata().type || 'pad').toUpperCase();
         data = data || {};
+        if (!callback && data.callback) { callback = data.callback; }
+
+        let makeButton = function(iconClasses, buttonClasses, title, text) {
+            const ariaLabel = title || text || '';
+            return $(h('button', {
+                class: buttonClasses,
+                title: title,
+                'aria-label': ariaLabel
+            }, [
+                iconClasses ? Icons.get(iconClasses) : null,
+                text ? h('span', { class: 'cp-toolbar-drawer-element' }, text) : null
+            ]));
+        };
+
         switch (type) {
             case 'export':
-                button = $('<button>', {
-                    'class': 'fa fa-download cp-toolbar-icon-export',
-                    title: Messages.exportButtonTitle,
-                }).append($('<span>', {'class': 'cp-toolbar-drawer-element'}).text(Messages.exportButton));
-
-                button.click(common.prepareFeedback(type));
+                button = makeButton('export', 'cp-toolbar-icon-export', Messages.exportButtonTitle, Messages.exportButton);
+                button
+                .click(common.prepareFeedback(type))
+                .click(UI.clearTooltipsDelay);
                 if (callback) {
                     button.click(callback);
                 }
                 break;
             case 'import':
-                button = $('<button>', {
-                    'class': 'fa fa-upload cp-toolbar-icon-import',
-                    title: Messages.importButtonTitle,
-                }).append($('<span>', {'class': 'cp-toolbar-drawer-element'}).text(Messages.importButton));
-                /*if (data.types) {
-                    // New import button in the toolbar
-                    var importFunction = {
-                        template: function () {
-                            UIElements.openTemplatePicker(common, true);
-                        },
-                        file: function (cb) {
-                            importContent('text/plain', function (content, file) {
-                                cb(content, file);
-                            }, {accept: data ? data.accept : undefined})
-                        }
-                    };
-                    var toImport = [];
-                    Object.keys(data.types).forEach(function (importType) {
-                        if (!importFunction[importType] || !data.types[importType]) { return; }
-                        var option = h('button', importType);
-                        $(option).click(function () {
-                            importFunction[importType](data.types[importType]);
-                        });
-                        toImport.push(options);
+                button = makeButton('import', 'cp-toolbar-icon-import', Messages.importButtonTitle, Messages.importButton);
+                var importer = importContent((data && data.binary) ? 'application/octet-stream' : 'text/plain', callback, {
+                    accept: data ? data.accept : undefined,
+                    binary: data ? data.binary : undefined
+                });
+
+                var handler = data.first? function () {
+                    data.first(function () {
+                        importer(); // Make sure we don't pass arguments to importer
                     });
+                }: importer; //importContent;
 
-                    button.click(common.prepareFeedback(type));
-
-                    if (toImport.length === 1) {
-                        button.click(function () { $(toImport[0]).click(); });
-                    } else {
-                        Cryptpad.alert(h('p.cp-import-container', toImport));
-                    }
-                }
-                else if (callback) {*/
-                    // Old import button, used in settings
-                    var importer = importContent((data && data.binary) ? 'application/octet-stream' : 'text/plain', callback, {
-                        accept: data ? data.accept : undefined,
-                        binary: data ? data.binary : undefined
-                    });
-
-                    var handler = data.first? function () {
-                        data.first(importer);
-                    }: importer; //importContent;
-
-                    button
-                    .click(common.prepareFeedback(type))
-                    .click(handler);
+                button
+                .click(common.prepareFeedback(type))
+                .click(function () {
+                    handler();
+                    UI.clearTooltipsDelay();
+                });
                 //}
                 break;
             case 'upload':
-                button = $('<button>', {
-                    'class': 'btn btn-primary new',
-                    title: Messages.uploadButtonTitle,
-                }).append($('<span>', {'class':'fa fa-upload'})).append(' '+Messages.uploadButton);
+                button = makeButton('upload', 'btn btn-primary new', Messages.uploadButtonTitle, Messages.uploadButton);
                 if (!data.FM) { return; }
                 var $input = $('<input>', {
                     'type': 'file',
@@ -631,37 +755,36 @@ define([
                     if (callback) { callback(); }
                 });
                 if (data.accept) { $input.attr('accept', data.accept); }
-                button.click(function () { $input.click(); });
+                button.click(function () {
+                    $input.click();
+                    UI.clearTooltipsDelay();
+                });
                 break;
             case 'copy':
-                button = $('<button>', {
-                    'class': 'fa fa-files-o cp-toolbar-icon-import',
-                }).append($('<span>', {'class': 'cp-toolbar-drawer-element'}).text(Messages.makeACopy));
+                button = makeButton('copy', 'cp-toolbar-icon-copy', '', Messages.makeACopy);
                 button
                 .click(common.prepareFeedback(type))
                 .click(function () {
                     sframeChan.query('EV_MAKE_A_COPY');
+                    UI.clearTooltipsDelay();
                 });
                 break;
             case 'importtemplate':
                 if (!AppConfig.enableTemplates) { return; }
                 if (!common.isLoggedIn()) { return; }
-                button = $('<button>', {
-                    'class': 'fa fa-upload cp-toolbar-icon-import',
-                }).append($('<span>', {'class': 'cp-toolbar-drawer-element'}).text(Messages.template_import));
+                button = makeButton('import-template', 'cp-toolbar-icon-import-template', '', Messages.template_import);
                 button
                 .click(common.prepareFeedback(type))
                 .click(function () {
                     if (callback) { return void callback(); }
                     UIElements.openTemplatePicker(common, true);
+                    UI.clearTooltipsDelay();
                 });
                 break;
             case 'template':
                 if (!AppConfig.enableTemplates) { return; }
                 if (!common.isLoggedIn()) { return; }
-                button = $('<button>', {
-                    'class': 'cptools cptools-new-template cp-toolbar-icon-template',
-                }).append($('<span>', {'class': 'cp-toolbar-drawer-element'}).text(Messages.saveTemplateButton));
+                button = makeButton('file-template', 'cp-toolbar-icon-template', '', Messages.saveTemplateButton);
                 if (data.rt || data.callback) {
                     button
                     .click(function () {
@@ -704,13 +827,12 @@ define([
                             });
                         };
                         UI.prompt(Messages.saveTemplatePrompt, title, todo);
+                        UI.clearTooltipsDelay();
                     });
                 }
                 break;
             case 'forget':
-                button = $('<button>', {
-                    'class': "fa fa-trash cp-toolbar-icon-forget"
-                }).append($('<span>', {'class': 'cp-toolbar-drawer-element'}).text(Messages.fc_delete));
+                button = makeButton('trash-full', 'cp-toolbar-icon-forget', '', Messages.fc_delete);
                 callback = typeof callback === "function" ? callback : function () {};
                 button
                 .click(common.prepareFeedback(type))
@@ -758,7 +880,7 @@ define([
                 button = $(h('button', {
                     //title: Messages.presentButtonTitle, // TODO display if the label text is collapsed
                 }, [
-                    h('i.fa.fa-play-circle'),
+                    Icons.get('play'),
                     h('span.cp-toolbar-name', Messages.share_linkPresent)
                 ])).click(common.prepareFeedback(type));
                 break;
@@ -766,38 +888,30 @@ define([
                 button = $(h('button', {
                     //title: Messages.previewButtonTitle, // TODO display if the label text is collapsed
                 }, [
-                    h('i.fa.fa-eye'),
+                    Icons.get('preview'),
                     h('span.cp-toolbar-name', Messages.toolbar_preview)
                 ])).click(common.prepareFeedback(type));
                 break;
             case 'print':
-                button = $('<button>', {
-                    title: Messages.printButtonTitle2,
-                    'class': "fa fa-print cp-toolbar-icon-print",
-                }).append($('<span>', {'class': 'cp-toolbar-drawer-element'}).text(Messages.printText));
+                button = makeButton('print', 'cp-toolbar-icon-print', Messages.printButtonTitle2, Messages.printText);
                 break;
             case 'history':
-                if (!AppConfig.enableHistory) {
-                    button = $('<span>');
-                    break;
-                }
-                button = $('<button>', {
-                    title: Messages.historyButton,
-                    'class': "fa fa-history cp-toolbar-icon-history",
-                }).append($('<span>', {'class': 'cp-toolbar-drawer-element'}).text(Messages.historyText));
+                button = makeButton('history', 'cp-toolbar-icon-history', Messages.historyButton, Messages.historyText, Messages.historyButton);
                 if (data.histConfig) {
-                    button
-                        .click(common.prepareFeedback(type))
-                        .on('click', function () {
+                    button.click(common.prepareFeedback(type)).on('click', function () {
                         common.getHistory(data.histConfig);
+                        UI.clearTooltipsDelay();
                     });
+                }
+                if (!AppConfig.enableHistory) {
+                    button.css('display', 'none');
                 }
                 break;
             case 'mediatag':
                 button = $(h('button.cp-toolbar-mediatag', {
                     //title: Messages.filePickerButton, // TODO display if the label text is collapsed
                 }, [
-                    h('i.fa.fa-picture-o'),
+                    Icons.get('toolbar-insert'),
                     h('span.cp-toolbar-name', Messages.toolbar_insert)
                 ])).click(common.prepareFeedback(type));
                 break;
@@ -805,18 +919,19 @@ define([
                 button = $(h('button.cp-toolbar-savetodrive', {
                     title: Messages.canvas_saveToDrive,
                 }, [
-                    h('i.fa.fa-file-image-o'),
+                    Icons.get('file-image'),
                     h('span.cp-toolbar-name.cp-toolbar-drawer-element', Messages.toolbar_savetodrive)
                 ])).click(common.prepareFeedback(type));
+                if (callback) { button.click(callback); }
                 break;
             case 'storeindrive':
                 button = $(h('button.cp-toolbar-storeindrive', {
                     style: 'display:none;'
                 }, [
-                    h('i.fa.fa-hdd-o'),
+                    Icons.get('drive'),
                     h('span.cp-toolbar-name.cp-toolbar-drawer-element', Messages.toolbar_storeInDrive)
                 ])).click(common.prepareFeedback(type)).click(function () {
-                    $(button).hide();
+                    $('.cp-toolbar-storeindrive').hide();
                     common.getSframeChannel().query("Q_AUTOSTORE_STORE", {
                         forceOwnDrive: true,
                     }, function (err, obj) {
@@ -834,10 +949,7 @@ define([
                 });
                 break;
             case 'hashtag':
-                button = $('<button>', {
-                    'class': 'fa fa-hashtag cp-toolbar-icon-hashtag',
-                    title: Messages.tags_title,
-                }).append($('<span>', {'class': 'cp-toolbar-drawer-element'}).text(Messages.fc_hashtag));
+                button = makeButton('tag', 'cp-toolbar-icon-hashtag', Messages.tags_title, Messages.fc_hashtag);
                 button.click(common.prepareFeedback(type))
                 .click(function () {
                     common.isPadStored(function (err, data) {
@@ -846,13 +958,16 @@ define([
                         }
                         UIElements.updateTags(common, null);
                     });
+                    UI.clearTooltipsDelay();
                 });
                 break;
             case 'toggle':
                 button = $(h('button.cp-toolbar-tools', {
                     //title: data.title || '', // TODO display if the label text is collapsed
+                    'aria-label': data.text || Messages.toolbar_tools, // Fallback
+                    'aria-pressed': false
                 }, [
-                    h('i.fa.' + (data.icon || 'fa-wrench')),
+                    Icons.get('apps-settings'),
                     h('span.cp-toolbar-name', data.text || Messages.toolbar_tools)
                 ])).click(common.prepareFeedback(type));
                 /*
@@ -868,6 +983,7 @@ define([
                 button.click(function (e) {
                     data.element.toggle();
                     var isVisible = data.element.is(':visible');
+                    button.attr('aria-pressed', isVisible ? 'true' : 'false');
                     if (callback) { callback(isVisible); }
                     if (isVisible) {
                         button.addClass('cp-toolbar-button-active');
@@ -881,11 +997,8 @@ define([
                 //updateIcon(data.element.is(':visible'));
                 break;
             case 'properties':
-                button = $('<button>', {
-                    'class': 'fa fa-info-circle cp-toolbar-icon-properties',
-                    title: Messages.propertiesButtonTitle,
-                }).append($('<span>', {'class': 'cp-toolbar-drawer-element'})
-                .text(Messages.propertiesButton))
+                button = makeButton('properties', 'cp-toolbar-icon-properties', Messages.propertiesButtonTitle, Messages.propertiesButton);
+                button
                 .click(common.prepareFeedback(type))
                 .click(function () {
                     var isTop;
@@ -897,33 +1010,29 @@ define([
                     }
 
                     sframeChan.event('EV_PROPERTIES_OPEN');
+                    UI.clearTooltipsDelay();
                 });
                 break;
             case 'save': // OnlyOffice save
-                button = $('<button>', {
-                    'class': 'fa fa-save',
-                    title: Messages.settings_save,
-                }).append($('<span>', {'class': 'cp-toolbar-drawer-element'})
-                .text(Messages.settings_save))
-                .click(common.prepareFeedback(type));
+                button = makeButton('save', '', Messages.settings_save, Messages.settings_save);
+                button
+                .click(function() {
+                    common.prepareFeedback(type);
+                    UI.clearTooltipsDelay();
+                });
                 if (callback) { button.click(callback); }
                 break;
             case 'newpad':
-                button = $('<button>', {
-                    title: Messages.newButtonTitle,
-                    'class': 'fa fa-plus cp-toolbar-icon-newpad',
-                }).append($('<span>', {'class': 'cp-toolbar-drawer-element'}).text(Messages.newButton));
+                button = makeButton('add', 'cp-toolbar-icon-newpad', Messages.newButtonTitle, Messages.newButton);
                 button
                 .click(common.prepareFeedback(type))
                 .click(function () {
                     common.createNewPadModal();
+                    UI.clearTooltipsDelay();
                 });
                 break;
             case 'snapshots':
-                button = $('<button>', {
-                    title: Messages.snapshots_button,
-                    'class': 'fa fa-camera cp-toolbar-icon-snapshots',
-                }).append($('<span>', {'class': 'cp-toolbar-drawer-element'}).text(Messages.snapshots_button));
+                button = makeButton('snapshot', 'cp-toolbar-icon-snapshots', Messages.snapshots_button,Messages.snapshots_button);
                 button
                 .click(common.prepareFeedback(type))
                 .click(function () {
@@ -931,20 +1040,21 @@ define([
                         return;
                     }
                     UIElements.openSnapshotsModal(common, data.load, data.make, data.remove);
+                    UI.clearTooltipsDelay();
                 });
                 break;
             default:
                 var drawerCls = data.drawer === false ? '' : '.cp-toolbar-drawer-element';
-                var icon = data.icon || "fa-question";
+                var icon = data.icon || "circle-question";
                 button = $(h('button', {
                     title: data.tippy || ''
                     //title: data.title || '',
                 }, [
-                    h('i.fa.' + icon),
+                    Icons.get(icon),
                     h('span.cp-toolbar-name'+drawerCls, data.text)
                 ]));
                 var feedbackHandler = common.prepareFeedback(data.name || 'DEFAULT');
-                button[0].addEventListener('click', function () {
+                Util.onClickEnter(button, function () {
                     feedbackHandler();
                     if (typeof(callback) !== 'function') { return; }
                     callback();
@@ -974,17 +1084,17 @@ define([
             'bold': {
                 // Msg.mdToolbar_bold
                 expr: '**{0}**',
-                icon: 'fa-bold'
+                icon: 'bold'
             },
             'italic': {
                 // Msg.mdToolbar_italic
                 expr: '_{0}_',
-                icon: 'fa-italic'
+                icon: 'italic'
             },
             'strikethrough': {
                 // Msg.mdToolbar_strikethrough
                 expr: '~~{0}~~',
-                icon: 'fa-strikethrough'
+                icon: 'strikethrough'
             },
             'heading': {
                 // Msg.mdToolbar_heading
@@ -993,12 +1103,12 @@ define([
                         return '# '+line;
                     }).join('\n')+'\n';
                 },
-                icon: 'fa-header'
+                icon: 'heading'
             },
             'link': {
                 // Msg.mdToolbar_link
                 expr: '[{0}](http://)',
-                icon: 'fa-link'
+                icon: 'link'
             },
             'quote': {
                 // Msg.mdToolbar_quote
@@ -1007,7 +1117,7 @@ define([
                         return '> '+line;
                     }).join('\n')+'\n\n';
                 },
-                icon: 'fa-quote-right'
+                icon: 'quote'
             },
             'nlist': {
                 // Msg.mdToolbar_nlist
@@ -1016,7 +1126,7 @@ define([
                         return '1. '+line;
                     }).join('\n')+'\n';
                 },
-                icon: 'fa-list-ol'
+                icon: 'list-ol'
             },
             'list': {
                 // Msg.mdToolbar_list
@@ -1025,7 +1135,7 @@ define([
                         return '* '+line;
                     }).join('\n')+'\n';
                 },
-                icon: 'fa-list-ul'
+                icon: 'list'
             },
             'check': {
                 // Msg.mdToolbar_check
@@ -1034,7 +1144,7 @@ define([
                         return '* [ ] ' + line;
                     }).join('\n') + '\n';
                 },
-                icon: 'fa-check-square-o'
+                icon: 'list-todo'
             },
             'code': {
                 // Msg.mdToolbar_code
@@ -1044,18 +1154,18 @@ define([
                     }
                     return '`' + str + '`';
                 },
-                icon: 'fa-code'
+                icon: 'code'
             },
             'toc': {
                 // Msg.mdToolbar_toc
                 expr: '[TOC]',
-                icon: 'fa-newspaper-o'
+                icon: 'toc'
             }
         };
 
         if (typeof(cfg.embed) === "function") {
             actions.embed = { // Messages.mdToolbar_embed
-                icon: 'fa-picture-o',
+                icon: 'embed',
                 action: function () {
                     var _cfg = {
                         types: ['file', 'link'],
@@ -1107,19 +1217,34 @@ define([
             editor.focus();
         };
         for (var k in actions) {
-            $('<button>', {
+            let $b = $('<button>', {
+                'data-notippy':1,
                 'data-type': k,
-                'class': 'pure-button fa ' + actions[k].icon,
-                title: Messages['mdToolbar_' + k] || k
-            }).click(onClick).appendTo($toolbar);
+                'class': 'pure-button cp-markdown-' + k,
+                'title': Messages['mdToolbar_' + k] || k,
+                'aria-label': Messages['mdToolbar_' + k] || k
+                }).append(Icons.get(actions[k].icon)).click(onClick);
+            if (k === "embed") { $toolbar.prepend($b); }
+            else { $toolbar.append($b); }
         }
         $('<button>', {
-            'class': 'pure-button fa fa-question cp-markdown-help',
-            title: Messages.mdToolbar_help
-        }).click(function () {
+            'data-notippy':1,
+            'class': 'pure-button cp-markdown-help',
+            'title': Messages.mdToolbar_help,
+            'aria-label': Messages.mdToolbar_help
+        }).append(
+            Icons.get('help')).click(function () {
             var href = Messages.mdToolbar_tutorial;
             common.openUnsafeURL(href);
         }).appendTo($toolbar);
+
+        $toolbar.on('keydown', function (e) {
+            if (e.key === 'Escape' || e.keyCode === 27) {
+                editor.focus();
+                e.preventDefault();
+            }
+        });
+
         return $toolbar;
     };
     UIElements.createMarkdownToolbar = function (common, editor, opts) {
@@ -1178,9 +1303,65 @@ define([
             $toolbarButton.show();
         };
 
+        function isSmallScreen() {
+            return window.innerHeight < 530 || window.innerWidth < 530;
+        }
+
+        var toolbarVisibleOnSmallScreen = false;
+
+        const $toolbarToggleButton = $(h('button.cp-markdown-toggle-button', {
+            'aria-label': Messages.toolbar_show_text_tools,
+            'aria-pressed': 'false',
+            'data-notippy': 1,
+            'type': 'button',
+            'title': Messages.toolbar_show_text_tools
+        })).append([
+            Icons.get('edit'),
+            h('span.cp-toolbar-label', {}, Messages.toolbar_text_tools)
+        ]).click(function () {
+            var isExpanded = $toolbar.is(':visible');
+            $toolbar.toggle();
+            $(this).toggleClass('cp-toolbar-button-active', !isExpanded)
+                .attr('aria-pressed', String(!isExpanded))
+                .attr('title', !isExpanded ? Messages.toolbar_hide_text_tools : Messages.toolbar_show_text_tools)
+                .attr('aria-label', !isExpanded ? Messages.toolbar_hide_text_tools : Messages.toolbar_show_text_tools);
+            toolbarVisibleOnSmallScreen = !isExpanded;
+        }).on('keydown keyup', e => {
+            // don't close modals when pressing Enter
+            // on the button
+            e.stopPropagation();
+        }).hide();
+
+        const updateToolbarVisibility = () => {
+            if (isSmallScreen()) {
+                $toolbarToggleButton.show();
+                if (toolbarVisibleOnSmallScreen) {
+                    $toolbar.show();
+                    $toolbarToggleButton.addClass('cp-toolbar-button-active')
+                        .attr('aria-pressed', 'true');
+                } else {
+                    $toolbar.hide();
+                    $toolbarToggleButton.removeClass('cp-toolbar-button-active')
+                        .attr('aria-pressed', 'false');
+                }
+                return;
+            }
+
+            $toolbarToggleButton.hide();
+            $toolbar.show();
+        };
+
+        if (opts?.toggleBar) {
+            $(window).on('resize', updateToolbarVisibility);
+            // Small delay to ensure the toolbar layout has rendered
+            // before checking for wrapping
+            setTimeout(updateToolbarVisibility);
+        }
+
         return {
             toolbar: $toolbar,
             button: $toolbarButton,
+            toggleButton: $toolbarToggleButton[0],
             setState: setState
         };
     };
@@ -1203,6 +1384,7 @@ define([
             kanban: 'kanban',
             form: 'form',
             whiteboard: 'whiteboard',
+            diagram: 'diagram',
         };
 
         var href = "https://docs.cryptpad.org/en/user_guide/applications.html";
@@ -1227,14 +1409,18 @@ define([
 
         common.fixLinks(text);
 
-        var closeButton = h('span.cp-help-close.fa.fa-times');
+        var closeButton = h('button.cp-help-close',[
+            Icons.get('close')
+        ], {
+            title: Messages.help_close_button
+        });
         var $toolbarButton = common.createButton('', true, {
             text: Messages.help_button,
             name: 'help'
         }).addClass('cp-toolbar-button-active');
         var help = h('div.cp-help-container', [
-            closeButton,
-            text
+            text,
+            closeButton
         ]);
 
         $toolbarButton.attr('title', Messages.show_help_button);
@@ -1251,6 +1437,7 @@ define([
         });
         $toolbarButton.click(function () {
             common.openUnsafeURL(href);
+            UI.clearTooltipsDelay();
         });
 
         common.getAttribute(['hideHelp', type], function (err, val) {
@@ -1265,7 +1452,6 @@ define([
             text: text
         };
     };
-
     /*  Create a usage bar which keeps track of how much storage space is used
         by your CryptDrive. The getPinnedUsage RPC is one of the heavier calls,
         so we throttle its usage. Clients will not update more than once per
@@ -1313,6 +1499,7 @@ define([
 
             var urls = common.getMetadataMgr().getPrivateData().accounts;
             var makeDonateButton = function () {
+                if (plan) { return; }
                 var $a = $('<a>', {
                     'class': 'cp-limit-upgrade btn btn-primary',
                     href: urls.donateURL,
@@ -1324,30 +1511,16 @@ define([
                 });
             };
 
-            var makeUpgradeButton = function () {
-                var $a = $('<a>', {
-                    'class': 'cp-limit-upgrade btn btn-success',
-                    href: urls.upgradeURL,
-                    rel: "noreferrer noopener",
-                    target: "_blank",
-                }).text(Messages.upgradeAccount).appendTo($buttons);
-                $a.click(function () {
-                    Feedback.send('UPGRADE_ACCOUNT');
-                });
-            };
-
             if (!Config.removeDonateButton) {
-                if (!common.isLoggedIn() || !Config.allowSubscriptions) {
-                    // user is not logged in, or subscriptions are disallowed
-                    makeDonateButton();
-                } else if (!plan) {
-                    // user is logged in and subscriptions are allowed
-                    // and they don't have one. show upgrades
-                    makeUpgradeButton();
-                    makeDonateButton();
-                } else {
-                    // they have a plan. show nothing
-                }
+                // Messages.upgradeAccount
+                common.getExtensionsSync('USAGE_BUTTON').some(ext => {
+                    if (!ext.getButton) { return; }
+                    let $b = ext.getButton(common, plan);
+                    if (!$b) { return; }
+                    $buttons.append($b);
+                });
+                // Add donate button
+                makeDonateButton();
             }
 
             var prettyUsage;
@@ -1402,6 +1575,97 @@ define([
         };
     };
 
+    UIElements.createDropdownEntry = function (config) {
+        var hide = function () {};
+        var allowedTags = ['a', 'li', 'p', 'hr', 'div'];
+        var isElement = function (o) {
+            return /HTML/.test(Object.prototype.toString.call(o)) &&
+                typeof(o.tagName) === 'string';
+        };
+        var isValidOption = function (o) {
+            if (typeof o !== "object") { return false; }
+            if (isElement(o)) { return true; }
+            if (!o.tag || allowedTags.indexOf(o.tag) === -1) { return false; }
+            return true;
+        };
+
+        var entry;
+        if (!isValidOption(config)) { return; }
+
+        if (isElement(config)) {
+            entry = $(config);
+        } else {
+            var $el = $(h(config.tag, (config.attributes || {})));
+
+            if (typeof(config.content) === 'string' || (config.content instanceof Element)) {
+                config.content = [config.content];
+            }
+
+            if (Array.isArray(config.content)) {
+                config.content.forEach(function (item) {
+                    if (item instanceof Element) {
+                        return void $el.append(item);
+                    }
+                    if (typeof(item) === 'string') {
+                        $el[0].appendChild(document.createTextNode(item));
+                    }
+                });
+            }
+
+            // Everything is added as an "li" tag
+            // Links and items with action are focusable
+            // Add correct "role" attribute
+            entry = $(h('li'));
+            if (config.tag === 'a') {
+                $el.attr('tabindex', '-1');
+                entry.attr('role', 'menuitem');
+                entry.attr('tabindex', '0');
+            } else if (config.tag === 'li') {
+                entry = $el;
+                entry.attr('role', 'menuitem');
+                entry.attr('tabindex', '0');
+            } else if (config.tag === 'hr') {
+                entry.attr('role', 'separator');
+            } else {
+                entry.attr('role', 'none');
+            }
+            entry.append($el);
+
+            // Action can be triggered with a click or keyboard event
+            if (config.tag === 'a' || config.tag === 'li') {
+                entry.on('mouseenter', (e) => {
+                    e.stopPropagation();
+                    entry.focus();
+                });
+
+                Util.onClickEnter(entry, function(e) {
+                    if ($(e.target).attr('href') === '#') {
+                        e.preventDefault();
+                    }
+                    if (config.isSelect) { return; }
+                    e.stopPropagation();
+                    if (typeof(config.action) === "function") {
+                        var close = config.action(e);
+                        if (close) { hide(); }
+                    } else {
+                        // Click on <a> with an href
+                        if (e.type === 'keydown'){ $el.get(0).click(); }
+                    }
+                }, {space: true});
+            }
+        }
+
+        hide = function () {
+            window.setTimeout(function () {
+                entry.closest('.cp-dropdown-menu-container').find('.cp-dropdown-submenu').hide();
+                entry.parents('.cp-dropdown-content').hide();
+
+            }, 0);
+        };
+
+        return entry;
+    };
+
     // Create a button with a dropdown menu
     // input is a config object with parameters:
     //  - container (optional): the dropdown container (span)
@@ -1412,18 +1676,6 @@ define([
     UIElements.createDropdown = function (config) {
         if (typeof config !== "object" || !Array.isArray(config.options)) { return; }
         if (config.feedback && !config.common) { return void console.error("feedback in a dropdown requires sframe-common"); }
-
-        var isElement = function (o) {
-            return /HTML/.test(Object.prototype.toString.call(o)) &&
-                typeof(o.tagName) === 'string';
-        };
-        var allowedTags = ['a', 'p', 'hr', 'div'];
-        var isValidOption = function (o) {
-            if (typeof o !== "object") { return false; }
-            if (isElement(o)) { return true; }
-            if (!o.tag || allowedTags.indexOf(o.tag) === -1) { return false; }
-            return true;
-        };
 
         // Container
         var $container = $(config.container);
@@ -1438,77 +1690,82 @@ define([
             $container = $('<span>', containerConfig);
         }
 
-        // Button
-        var $button;
 
-        if (config.buttonContent) {
-            $button = $(h('button', {
-                class: config.buttonCls || '',
-            }, [
-                h('span.cp-dropdown-button-title', config.buttonContent),
-            ]));
-        } else {
-            $button = $('<button>', {
-                'class': config.buttonCls || ''
-            }).append($('<span>', {'class': 'cp-dropdown-button-title'}).text(config.text || ""));
-        }
+        // Button
+        let icon = config.iconCls ? Icons.get(config.iconCls) : undefined;
+        var $button = $(h('button', {
+            class: config.buttonCls || '',
+            'aria-haspopup': 'menu',
+            'aria-expanded': 'false',
+            'title': config.buttonTitle || '',
+            'aria-label': config.buttonTitle || '',
+        }, config.buttonContent || [
+            icon,
+            h('span.cp-dropdown-button-title', config.text),
+        ]));
 
         if (config.caretDown) {
-            $('<span>', {
-                'class': 'fa fa-caret-down',
-            }).prependTo($button);
+            $button.prepend(Icons.get('chevron-down'));
         }
         if (config.angleDown) {
-            $('<span>', {
-                'class': 'fa fa-angle-down',
-            }).prependTo($button);
+            $button.prepend(Icons.get('chevron-down'));
         }
 
         // Menu
-        var $innerblock = $('<div>', {'class': 'cp-dropdown-content'});
-        if (config.left) { $innerblock.addClass('cp-dropdown-left'); }
+        var $innerblock = $('<ul>', {
+            'class': 'cp-dropdown-content',
+            'role': 'menu',
+            'tabindex': '-1'
+        });
+        var $outerblock = $(h('div.cp-dropdown-menu-container', $innerblock[0]));
+        let $parentMenu = config.isSubmenuOf;
+        $container.$menu = $innerblock;
+        if (config.left) { $outerblock.addClass('cp-dropdown-left'); }
+        if (config.isSubmenuOf && config.isSubmenuOf.length) {
+            $innerblock.addClass('cp-dropdown-submenu');
+        }
 
         var hide = function () {
-            window.setTimeout(function () { $innerblock.hide(); }, 0);
+            window.setTimeout(function () {
+                $innerblock.hide();
+            }, 0);
         };
 
-        var setOptions = function (options) {
+        // When the menu is collapsed, update aria-expanded
+        var observer = new MutationObserver(function (mutations) {
+            mutations.forEach(function (mutation) {
+                if (mutation.attributeName !== 'style') { return; }
+                if ($innerblock[0].style.display === 'none') {
+                    $button.attr('aria-expanded', 'false');
+                    if (config.$parentButton) {
+                        config.$parentButton.find('a')
+                            .toggleClass('cp-dropdown-element-active', false);
+                    }
+                }
+            });
+        });
+        observer.observe($innerblock[0], { attributes: true });
+
+        // Add the dropdown content
+        var setOptions = $container.setOptions = function (options) {
+            $innerblock.empty();
             options.forEach(function (o) {
-                if (!isValidOption(o)) { return; }
-                if (isElement(o)) { return $innerblock.append(o); }
-                var $el = $(h(o.tag, (o.attributes || {})));
-
-                if (typeof(o.content) === 'string' || (o.content instanceof Element)) {
-                    o.content = [o.content];
-                }
-                if (Array.isArray(o.content)) {
-                    o.content.forEach(function (item) {
-                        if (item instanceof Element) {
-                            return void $el.append(item);
-                        }
-                        if (typeof(item) === 'string') {
-                            $el[0].appendChild(document.createTextNode(item));
-                        }
-                    });
-                    // array of elements or text nodes
-                }
-
-                $el.appendTo($innerblock);
-                if (typeof(o.action) === 'function') {
-                    $el.click(function (e) {
-                        var close = o.action(e);
-                        if (close) { hide(); }
-                    });
-                }
+                if (!o) { return; }
+                o.isSelect = config.isSelect;
+                let $entry = UIElements.createDropdownEntry(o);
+                if (!$entry) { return void console.error('Error adding dropdown entry', o); }
+                $entry.appendTo($innerblock);
             });
         };
         setOptions(config.options);
-        $container.setOptions = function (options) {
-            $innerblock.empty();
-            setOptions(options);
+
+        $container.addOption = function (config) {
+            let $entry = UIElements.createDropdownEntry(config);
+            $entry.appendTo($innerblock);
         };
 
-        $container.append($button).append($innerblock);
+        $container.append($button).append($outerblock);
+        if ($parentMenu) { $parentMenu.after($innerblock); }
 
         var value = config.initialValue || '';
 
@@ -1516,6 +1773,11 @@ define([
             if ($el.length !== 1) { return; }
             $innerblock.find('.cp-dropdown-element-active').removeClass('cp-dropdown-element-active');
             $el.addClass('cp-dropdown-element-active');
+            $el.closest('li').focus();
+        };
+        var setFocus = function ($el) {
+            if ($el.length !== 1) { return; }
+            $el.focus();
             var scroll = $el.position().top + $innerblock.scrollTop();
             if (scroll < $innerblock.scrollTop()) {
                 $innerblock.scrollTop(scroll);
@@ -1528,25 +1790,57 @@ define([
             var wh = $(window).height();
             var button = $button[0].getBoundingClientRect();
             var topPos = button.bottom;
+            $button.attr('aria-expanded', 'true');
             $innerblock.css('bottom', '');
+            $innerblock.css('display', 'flex'); // for the css order rules to apply
+            $innerblock.css('flex-direction', 'column');
+            if ($parentMenu) {
+                // keep parent open when recursive
+                $parentMenu.show();
+                if (config.$parentButton) {
+                    config.$parentButton.find('a')
+                        .toggleClass('cp-dropdown-element-active', true);
+                }
+            }
+
             if (config.noscroll) {
                 var h = $innerblock.outerHeight();
                 if ((topPos + h) > wh) {
                     $innerblock.css('bottom', button.height+'px');
                 }
+            } else if ($parentMenu) {
+                let max = $parentMenu.css('max-height');
+                let css = {
+                    'max-height': max
+                };
+                if (config.$parentButton) {
+                    let pos = config.$parentButton.position();
+                    let diff = pos.top;
+                    css['margin-top'] = diff+'px';
+                    css['max-height'] = (parseFloat(max)-diff)+'px';
+                }
+                $innerblock.css(css);
+                if ($innerblock.height() < 50) {
+                    $innerblock.css('max-height', max);
+                    $innerblock.css('margin-top', '');
+                }
             } else {
                 $innerblock.css('max-height', Math.floor(wh - topPos - 1)+'px');
             }
-            $innerblock.show();
             $innerblock.find('.cp-dropdown-element-active').removeClass('cp-dropdown-element-active');
-            if (config.isSelect && value) {
-                // We use JSON.stringify here to escape quotes
-                var $val = $innerblock.find('[data-value='+JSON.stringify(value)+']');
-                setActive($val);
-                try {
-                    $innerblock.scrollTop($val.position().top + $innerblock.scrollTop());
-                } catch (e) {}
-            }
+            setTimeout(() => {
+                if (config.isSelect && value) {
+                    // We use JSON.stringify here to escape quotes
+                    if (typeof(value) === "object") { value = JSON.stringify(value); }
+                    var $val = $innerblock.find('[data-value='+JSON.stringify(value)+']');
+                    setActive($val);
+                    try {
+                        $innerblock.scrollTop($val.position().top + $innerblock.scrollTop());
+                    } catch (e) {}
+                } else {
+                    setFocus($innerblock.find('[role="menuitem"]').first());
+                }
+            });
             if (config.feedback) { Feedback.send(config.feedback); }
         };
 
@@ -1554,10 +1848,6 @@ define([
             e.stopPropagation();
             var state = $innerblock.is(':visible');
             $('.cp-dropdown-content').hide();
-
-            var $c = $container.closest('.cp-toolbar-drawer-content');
-            $c.removeClass('cp-dropdown-visible');
-            if (!state) { $c.addClass('cp-dropdown-visible'); }
 
             try {
                 $('iframe').each(function (idx, ifrw) {
@@ -1574,71 +1864,14 @@ define([
         });
 
         if (config.isSelect) {
-            var pressed = '';
-            var to;
             $container.onChange = Util.mkEvent();
-            $container.on('click', 'a', function () {
-                value = $(this).data('value');
-                var $val = $(this);
+            $innerblock.on('click', 'li', function () {
+                var $val = $(this).find('a');
+                value = $val.data('value');
                 var textValue = $val.text() || value;
                 $button.find('.cp-dropdown-button-title').text(textValue);
                 $container.onChange.fire(textValue, value);
             });
-            $container.keydown(function (e) {
-                var $value = $innerblock.find('[data-value].cp-dropdown-element-active:visible');
-                if (!$value.length) {
-                    $value = $innerblock.find('[data-value]').first();
-                }
-                if (e.which === 38) { // Up
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if ($value.length) {
-                        $value.mouseleave();
-                        var $prev = $value.prev();
-                        $prev.mouseenter();
-                        setActive($prev);
-                    }
-                }
-                if (e.which === 40) { // Down
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if ($value.length) {
-                        $value.mouseleave();
-                        var $next = $value.next();
-                        $next.mouseenter();
-                        setActive($next);
-                    }
-                }
-                if (e.which === 13) { //Enter
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if ($value.length) {
-                        $value.click();
-                        hide();
-                    }
-                }
-                if (e.which === 27) { // Esc
-                    e.preventDefault();
-                    e.stopPropagation();
-                    $value.mouseleave();
-                    hide();
-                }
-            });
-            $container.keypress(function (e) {
-                window.clearTimeout(to);
-                var c = String.fromCharCode(e.which);
-                pressed += c;
-                // We use JSON.stringify here to escape quotes
-                var $value = $innerblock.find('[data-value^='+JSON.stringify(pressed)+']:first');
-                if ($value.length) {
-                    setActive($value);
-                    $innerblock.scrollTop($value.position().top + $innerblock.scrollTop());
-                }
-                to = window.setTimeout(function () {
-                    pressed = '';
-                }, 1000);
-            });
-
             $container.setValue = function (val, name, sync) {
                 value = val;
                 // We use JSON.stringify here to escape quotes
@@ -1656,6 +1889,151 @@ define([
             };
         }
 
+        var pressed = '';
+        var to;
+        var findItem = function () {
+            var $value = $();
+            $innerblock.find('[role="menuitem"]').each((i, el) => {
+                var $el = $(el);
+                var $item = $el.find('> *');
+                if ($item.length && !$item.is(':visible')) { return false; }
+                var text = $el.text().toLowerCase();
+                var p = pressed.toLowerCase();
+                if (text.indexOf(p) === 0) {
+                    $value = $el;
+                    return false;
+                }
+            });
+            return $value;
+        };
+        var getAll = () => {
+            return $innerblock.find('[role="menuitem"]').filter((i, el) => {
+                var $item = $(el).find('> *');
+                return !$item.length || $item.is(':visible');
+            });
+        };
+        var getPrev = ($el) => {
+            var $all = getAll();
+            if (!$all.length) { return $(); }
+            var idx = $all.index($el[0]);
+            if (idx === -1) { return $(); }
+            var prev = (idx - 1 + $all.length) % $all.length;
+            return $($all.get(prev));
+        };
+        var getNext = ($el) => {
+            var $all = getAll();
+            if (!$all.length) { return $(); }
+            var idx = $all.index($el[0]);
+            if (idx === -1) { return $(); }
+            var next = (idx + 1) % $all.length;
+            return $($all.get(next));
+        };
+
+        let $listener = $container;
+        if ($parentMenu) { $listener = $innerblock; }
+        $listener.keydown(function (e) {
+            e.stopPropagation(); // don't propagate event to window if the dropdown is focused
+
+            var visible = $innerblock.is(':visible');
+            var $value = $innerblock.find('li:focus');
+            if (!visible && [38,40].includes(e.which) && !config.isSelect) {
+                $container.click();
+                visible = true;
+            }
+
+            if (!visible) { return; }
+            if (e.which === 38) { // Up
+                e.preventDefault();
+                var $prev;
+                if (!$value.length) {
+                    $prev = getAll().last();
+                } else {
+                    $prev = getPrev($value);
+                }
+                $value.mouseleave();
+                $prev.mouseenter();
+                setTimeout(() => {
+                    setFocus($prev);
+                });
+            }
+            if (e.which === 40) { // Down
+                e.preventDefault();
+                var $next;
+                if (!$value.length) {
+                    $next = getAll().first();
+                } else {
+                    $next = getNext($value);
+                }
+                $value.mouseleave();
+                $next.mouseenter();
+                setTimeout(() => {
+                    setFocus($next);
+                });
+            }
+            if (e.which === 13 || e.which === 32) { //Enter or space
+                e.preventDefault();
+                if ($value.length) {
+                    $value.click();
+                    hide();
+                    $button.focus();
+                } else {
+                    setFocus(getAll().first());
+                }
+            }
+            if (e.which === 27) { // Esc
+                e.preventDefault();
+                $value.mouseleave();
+                if ($container.find('.cp-dropdown-submenu:visible').length) {
+                    let $submenu = $container.find('.cp-dropdown-submenu:visible');
+                    if ($submenu[0] !== $innerblock[0]) {
+                        $submenu.hide();
+                        return;
+                    }
+                }
+                hide();
+                if ($parentMenu) { $button.closest('li').focus(); }
+                else { $button.focus(); }
+            }
+            if (e.which === 9) { // Tab
+                if (e.shiftKey) {
+                    hide();
+                    if ($parentMenu) { $button.closest('li').focus(); }
+                    else { $button.focus(); }
+                } else {
+                    // Hide parent only if we're not going to focus visible submenu
+                    if ($parentMenu ||
+                        !$container.find('.cp-dropdown-submenu:visible').length) {
+                        hide();
+                    }
+                    if ($parentMenu) { $parentMenu.hide(); }
+                    $innerblock.find('[role="menuitem"]').last().focus();
+                }
+            }
+        });
+        $listener.keypress(function (e) {
+            e.stopPropagation(); // Don't propagate to window
+            window.clearTimeout(to);
+            var c = String.fromCharCode(e.which);
+            pressed += c;
+            // We use JSON.stringify here to escape quotes
+            var $value;
+            if (config.isSelect) {
+                $value = $innerblock.find('[data-value^='+JSON.stringify(pressed)+']:first').closest('li');
+            } else {
+                $value = findItem();
+            }
+            if ($value.length) {
+                setFocus($value);
+                $innerblock.scrollTop($value.position().top + $innerblock.scrollTop());
+            }
+            to = window.setTimeout(function () {
+                pressed = '';
+            }, 1000);
+        });
+
+        $container.close = hide;
+
+
         return $container;
     };
 
@@ -1665,7 +2043,7 @@ define([
         var origin = priv.origin;
 
         // TODO link to the most recent changelog/release notes
-        // https://github.com/xwiki-labs/cryptpad/releases/latest/ ?
+        // https://github.com/cryptpad/cryptpad/releases/latest/ ?
 
         var template = function (line, link) {
             if (!line || !link) { return; }
@@ -1692,10 +2070,11 @@ define([
         var sourceLine = template(Messages.info_sourceFlavour, Pages.sourceLink);
 
         var content = h('div.cp-info-menu-container', [
-            h('div.logo-block', [
-                h('img', {
-                    src: '/customize/CryptPad_logo.svg?' + urlArgs
-                }),
+                h('div.logo-block', [
+                    h('img', {
+                        src: '/customize/CryptPad_logo.svg?' + urlArgs,
+                        alt: Messages.label_logo
+                    }),
                 h('h6', "CryptPad"),
                 h('span', Pages.versionString)
             ]),
@@ -1720,7 +2099,7 @@ define([
             },
         ];
 
-        var modal = UI.dialog.customModal(content, {buttons: buttons });
+        var modal = UI.dialog.customModal(content, {scrollable: true, buttons: buttons });
         UI.openCustomModal(modal);
     };
 
@@ -1767,7 +2146,7 @@ define([
                 ]));
             }
             options.push({
-                tag: 'p',
+                tag: 'div',
                 attributes: {'class': 'cp-toolbar-account'},
                 content: userAdminContent,
             });
@@ -1776,8 +2155,8 @@ define([
         if (accountName && !AppConfig.disableProfile) {
             options.push({
                 tag: 'a',
-                attributes: {'class': 'cp-toolbar-menu-profile fa fa-user-circle'},
-                content: h('span', Messages.profileButton),
+                attributes: {'class': 'cp-toolbar-menu-profile'},
+                content: h('span',[Icons.get('user-profile')], Messages.profileButton),
                 action: function () {
                     if (padType) {
                         Common.openURL(origin+'/profile/');
@@ -1790,10 +2169,7 @@ define([
         if (padType !== 'drive' || (!accountName && priv.newSharedFolder)) {
             options.push({
                 tag: 'a',
-                attributes: {
-                    'class': 'fa fa-hdd-o'
-                },
-                content: h('span', Messages.type.drive),
+                content: h('span', [Icons.get('drive')], Messages.type.drive),
                 action: function () {
                     Common.openURL(origin+'/drive/');
                 },
@@ -1802,10 +2178,7 @@ define([
         if (padType !== 'teams' && accountName) {
             options.push({
                 tag: 'a',
-                attributes: {
-                    'class': 'fa fa-users'
-                },
-                content: h('span', Messages.type.teams),
+                content: h('span', [Icons.get('users')], Messages.type.teams),
                 action: function () {
                     Common.openURL('/teams/');
                 },
@@ -1814,10 +2187,7 @@ define([
         if (padType !== 'calendar' && accountName) {
             options.push({
                 tag: 'a',
-                attributes: {
-                    'class': 'fa fa-calendar',
-                },
-                content: h('span', Messages.calendar),
+                content: h('span', [Icons.get('calendar')], Messages.calendar),
                 action: function () {
                     Common.openURL('/calendar/');
                 },
@@ -1826,10 +2196,7 @@ define([
         if (padType !== 'contacts' && accountName) {
             options.push({
                 tag: 'a',
-                attributes: {
-                    'class': 'fa fa-address-book'
-                },
-                content: h('span', Messages.type.contacts),
+                content: h('span', [Icons.get('contacts')], Messages.type.contacts),
                 action: function () {
                     Common.openURL('/contacts/');
                 },
@@ -1838,8 +2205,8 @@ define([
         if (padType !== 'settings') {
             options.push({
                 tag: 'a',
-                attributes: {'class': 'cp-toolbar-menu-settings fa fa-cog'},
-                content: h('span', Messages.settingsButton),
+                attributes: {'class': 'cp-toolbar-menu-settings'},
+                content: h('span', [Icons.get('settings')], Messages.settingsButton),
                 action: function () {
                     if (padType) {
                         Common.openURL(origin+'/settings/');
@@ -1852,11 +2219,11 @@ define([
 
         options.push({ tag: 'hr' });
         // Add administration panel link if the user is an admin
-        if (priv.edPublic && Array.isArray(Config.adminKeys) && Config.adminKeys.indexOf(priv.edPublic) !== -1) {
+        if (priv.edPublic && Array.isArray(Config.adminKeys) && Config.adminKeys.includes(priv.edPublic)) {
             options.push({
                 tag: 'a',
-                attributes: {'class': 'cp-toolbar-menu-admin fa fa-cogs'},
-                content: h('span', Messages.adminPage || 'Admin'),
+                attributes: {'class': 'cp-toolbar-menu-admin'},
+                content: h('span', [Icons.get('administration')], Messages.adminPage || 'Admin'),
                 action: function () {
                     if (padType) {
                         Common.openURL(origin+'/admin/');
@@ -1866,21 +2233,32 @@ define([
                 },
             });
         }
+        // Add moderation panel link if the user is a moderator and support is enabled
+        if (priv.edPublic && Config.supportMailboxKey && Array.isArray(Config.moderatorKeys) && Config.moderatorKeys.includes(priv.edPublic)) {
+            options.push({
+                tag: 'a',
+                attributes: {'class': 'cp-toolbar-menu-admin'},
+                content: h('span', [Icons.get('moderation')], Messages.moderationPage || 'Support mailbox'),
+                action: function () {
+                    Common.openURL(origin+'/moderation/');
+                    return true;
+                },
+            });
+        }
         options.push({
             tag: 'a',
             attributes: {
                 'target': '_blank',
                 'rel': 'noopener',
                 'href': 'https://docs.cryptpad.org',
-                'class': 'fa fa-book'
             },
-            content: h('span', Messages.docs_link)
+            content: h('span', [Icons.get('documentation')], Messages.docs_link)
         });
-        if (padType !== 'support' && accountName && Config.supportMailbox) {
+        if (padType !== 'support' && accountName && Config.supportMailboxKey) {
             options.push({
                 tag: 'a',
-                attributes: {'class': 'cp-toolbar-menu-support fa fa-life-ring'},
-                content: h('span', Messages.supportPage || 'Support'),
+                attributes: {'class': 'cp-toolbar-menu-support'},
+                content: h('span', [Icons.get('support')], Messages.supportPage || 'Support'),
                 action: function () {
                     if (padType) {
                         Common.openURL(origin+'/support/');
@@ -1894,9 +2272,9 @@ define([
         options.push({
             tag: 'a',
             attributes: {
-                'class': 'cp-toolbar-about fa fa-info',
+                'class': 'cp-toolbar-about',
             },
-            content: h('span', Messages.user_about),
+            content: h('span', [Icons.get('properties')], Messages.user_about),
             action: function () {
                 UIElements.displayInfoMenu(Common, metadataMgr);
             },
@@ -1904,10 +2282,7 @@ define([
 
         options.push({
             tag: 'a',
-            attributes: {
-                'class': 'fa fa-home'
-            },
-            content: h('span', Messages.homePage),
+            content: h('span',[Icons.get('homepage')], Messages.homePage),
             action: function () {
                 Common.openURL('/index.html');
             },
@@ -1928,27 +2303,21 @@ define([
         // section to determine if we have to manually hide a separator.
         var surveyAlone = true;
 
-        if (Config.allowSubscriptions) {
+        Common.getExtensionsSync('USERMENU_ITEM').forEach(ext => {
+            if (!ext.getItem) {
+                return void console.error("Missing attribute for extension point", "USERMENU_ITEM", ext);
+            }
+            let item = ext.getItem(Common);
+            if (!item) { return; }
             surveyAlone = false;
-            options.push({
-                tag: 'a',
-                attributes: {
-                    'class': 'fa fa-star-o'
-                },
-                content: h('span', priv.plan ? Messages.settings_cat_subscription : Messages.pricing),
-                action: function () {
-                    Common.openURL(priv.plan ? priv.accounts.upgradeURL :'/features.html');
-                },
-            });
-        }
+            options.push(item);
+        });
+
         if (!priv.plan && !Config.removeDonateButton) {
             surveyAlone = false;
             options.push({
                 tag: 'a',
-                attributes: {
-                    'class': 'fa fa-gift'
-                },
-                content: h('span', Messages.crowdfunding_button2),
+                content: h('span',[Icons.get('donate')], Messages.crowdfunding_button2),
                 action: function () {
                     Common.openUnsafeURL(priv.accounts.donateURL);
                 },
@@ -1961,9 +2330,9 @@ define([
         options.push({
             tag: 'a',
             attributes: {
-                'class': 'cp-toolbar-survey fa fa-graduation-cap'
+                'class': 'cp-toolbar-survey'
             },
-            content: h('span', Messages.survey),
+            content: h('span', [Icons.get('survey'), Messages.survey]),
             action: function () {
                 Common.openUnsafeURL(surveyURL);
                 Feedback.send('SURVEY_CLICKED');
@@ -1976,9 +2345,9 @@ define([
             options.push({
                 tag: 'a',
                 attributes: {
-                    'class': 'cp-toolbar-menu-logout-everywhere fa fa-plug',
+                    'class': 'cp-toolbar-menu-logout-everywhere',
                 },
-                content: h('span', Messages.logoutEverywhere),
+                content: h('span',[Icons.get('logout-everywhere')], Messages.logoutEverywhere),
                 action: function () {
                     UI.confirm(Messages.settings_logoutEverywhereConfirm, function (yes) {
                         if (!yes) { return; }
@@ -1990,8 +2359,8 @@ define([
             });
             options.push({
                 tag: 'a',
-                attributes: {'class': 'cp-toolbar-menu-logout fa fa-sign-out'},
-                content: h('span', Messages.logoutButton),
+                attributes: {'class': 'cp-toolbar-menu-logout'},
+                content: h('span',[Icons.get('logout')], Messages.logoutButton),
                 action: function () {
                     Common.logout(function () {
                         Common.gotoURL(origin+'/');
@@ -2001,8 +2370,8 @@ define([
         } else {
             options.push({
                 tag: 'a',
-                attributes: {'class': 'cp-toolbar-menu-login fa fa-sign-in'},
-                content: h('span', Messages.login_login),
+                attributes: {'class': 'cp-toolbar-menu-login'},
+                content: h('span', [Icons.get('login')], Messages.login_login),
                 action: function () {
                     Common.setLoginRedirect('login');
                 },
@@ -2010,15 +2379,15 @@ define([
             if (!Config.restrictRegistration) {
                 options.push({
                     tag: 'a',
-                    attributes: {'class': 'cp-toolbar-menu-register fa fa-user-plus'},
-                    content: h('span', Messages.login_register),
+                    attributes: {'class': 'cp-toolbar-menu-register'},
+                    content: h('span',[Icons.get('register')], Messages.login_register),
                     action: function () {
                         Common.setLoginRedirect('register');
                     },
                 });
             }
         }
-        var $icon = $('<span>', {'class': 'fa fa-user-secret'});
+        var $icon = Icons.get('secret-user');
         var $userButton = $('<div>').append($icon);
         if (accountName) {
             $userButton = $('<div>').append(accountName);
@@ -2039,19 +2408,21 @@ define([
             };
         });
         var dropdownConfigUser = {
-            buttonContent: $userButton[0],
+            text: $userButton[0],
             options: options, // Entries displayed in the menu
             left: true, // Open to the left of the button
             container: config.$initBlock, // optional
+            buttonTitle: config.buttonTitle,
             feedback: "USER_ADMIN",
             common: Common
         };
         var $userAdmin = UIElements.createDropdown(dropdownConfigUser);
 
-        var $survey = $userAdmin.find('.cp-toolbar-survey');
+        var $survey = $userAdmin.find('.cp-toolbar-survey').parent();
+        var $surveyHr =  $survey.next('[role="separator"]');
         if (!surveyURL) {
             $survey.hide();
-            if (surveyAlone) { $survey.next('hr').hide(); }
+            if (surveyAlone) { $surveyHr.hide(); }
         }
         Common.makeUniversal('broadcast', {
             onEvent: function (obj) {
@@ -2063,11 +2434,11 @@ define([
                 surveyURL = url;
                 if (!url) {
                     $survey.hide();
-                    if (surveyAlone) { $survey.next('hr').hide(); }
+                    if (surveyAlone) { $surveyHr.hide(); }
                     return;
                 }
                 $survey.show();
-                if (surveyAlone) { $survey.next('hr').show(); }
+                if (surveyAlone) { $surveyHr.show(); }
             }
         });
 
@@ -2090,9 +2461,9 @@ define([
             var myData = metadataMgr.getUserData();
             var privateData = metadataMgr.getPrivateData();
             var uid = myData.uid;
-            if (!priv.plan && privateData.plan) {
+            if ((!priv.plan && privateData.plan) ||
+                (!priv.accountName && privateData.accountName)) {
                 config.$initBlock.empty();
-                metadataMgr.off('change', updateButton);
                 UIElements.createUserAdminMenu(Common, config);
                 return;
             }
@@ -2139,7 +2510,6 @@ define([
                 attributes: {
                     'class': 'cp-language-value',
                     'data-value': l,
-                    'href': '#',
                 },
                 content: [ // supplying content as an array ensures it's a text node, not parsed HTML
                     languages[l] // Pretty name of the language value
@@ -2179,7 +2549,7 @@ define([
             $body: $('body')
         });
         var $modal = modal.$modal;
-        var $title = $(h('h3', [ h('i.fa.fa-plus'), ' ', Messages.fm_newButton ]));
+        var $title = $(h('h3', [ Icons.get('add'), ' ', Messages.fm_newButton ]));
 
         var $description = $(Pages.setHTML(h('p'), Messages.creation_newPadModalDescription));
         $modal.find('.cp-modal').append($title);
@@ -2188,7 +2558,7 @@ define([
         var $container = $('<div>');
         var i = 0;
 
-        var types = AppConfig.availablePadTypes.filter(function (p) {
+        var types = PadTypes.availableTypes.filter(function (p) {
             if (AppConfig.hiddenTypes.indexOf(p) !== -1) { return; }
             if (!common.isLoggedIn() && AppConfig.registeredOnlyTypes &&
                 AppConfig.registeredOnlyTypes.indexOf(p) !== -1) { return; }
@@ -2216,10 +2586,21 @@ define([
         });
 
         var selected = -1;
+        var previous = function () {
+            selected = (selected === 0 ? types.length : selected) - 1;
+            $container.find('.cp-icons-element-selected').removeClass('cp-icons-element-selected');
+            let element = $container.find('#cp-newpad-icons-'+selected).addClass('cp-icons-element-selected');
+            if (element.hasClass('cp-app-disabled')) {
+                previous();
+            }
+        };
         var next = function () {
             selected = ++selected % types.length;
             $container.find('.cp-icons-element-selected').removeClass('cp-icons-element-selected');
-            $container.find('#cp-newpad-icons-'+selected).addClass('cp-icons-element-selected');
+            let element = $container.find('#cp-newpad-icons-'+selected).addClass('cp-icons-element-selected');
+            if (element.hasClass('cp-app-disabled')) {
+                next();
+            }
         };
 
         $modal.off('keydown');
@@ -2227,7 +2608,11 @@ define([
             if (e.which === 9) {
                 e.preventDefault();
                 e.stopPropagation();
-                next();
+                if (e.shiftKey) {
+                    previous();
+                } else {
+                    next();
+                }
                 return;
             }
             if (e.which === 13) {
@@ -2243,6 +2628,7 @@ define([
         window.setTimeout(function () {
             modal.show();
             $modal.focus();
+            next();
         });
     };
 
@@ -2362,10 +2748,25 @@ define([
         var $creationContainer = $('<div>', { id: 'cp-creation-container' }).appendTo($body);
         var urlArgs = (Config.requireConf && Config.requireConf.urlArgs) || '';
 
-        var logo = h('img', { src: '/customize/CryptPad_logo.svg?' + urlArgs });
-        var fill1 = h('div.cp-creation-fill.cp-creation-logo', logo);
-        var fill2 = h('div.cp-creation-fill');
-        var $creation = $('<div>', { id: 'cp-creation', tabindex:1 });
+        var fill1 = h('div.cp-creation-fill');
+        var fill2 = h('div.cp-creation-fill', [
+
+            h('div#cp-creation-footer', [
+                h('div#cp-creation-logo', [
+                    h('img', {
+                        src:`/customize/CryptPad_logo_grey.svg?${urlArgs}`,
+                        alt: '',
+                        'aria-hidden': true
+                    }),
+                    h('span', 'CryptPad')
+                ]),
+                h('div#cp-creation-status', [
+                    Icons.get('lock'),
+                    h('span', Messages.loading_encrypted)
+                ])
+            ])
+        ]);
+        var $creation = $('<div>', { id: 'cp-creation' });
         $creationContainer.append([fill1, $creation, fill2]);
 
         var createHelper = function (href, text) {
@@ -2383,7 +2784,7 @@ define([
         if (/^http/.test(domain)) { domain = domain.replace(/^https?\:\/\//, ''); }
 
         var title = h('div.cp-creation-title', [
-            UI.getFileIcon({type: type})[0],
+            UI.getFileIcon({type: type}),
             h('div.cp-creation-title-text', [
                 h('span', newPadH3Title),
                 createHelper(Pages.localizeDocsLink('https://docs.cryptpad.org/en/user_guide/apps/general.html#new-document'), Messages.creation_helperText)
@@ -2392,7 +2793,10 @@ define([
         $creation.append(title);
 
         if (early === 1) {
-            $creation.append(h('div.cp-creation-early.alert.alert-warning', Messages._getKey('premiumAccess', [
+            $creation.append(h('div.cp-creation-early.alert.alert-warning',{
+                role: 'alert',
+                'aria-live': 'assertive'
+            }, Messages._getKey('premiumAccess', [
                 domain
             ])));
         }
@@ -2433,7 +2837,7 @@ define([
                 'data-id': '-1',
                 title: Messages.settings_cat_drive
             }, [
-                h('span.cp-creation-team-avatar.fa.fa-hdd-o'),
+                h('span.cp-creation-team-avatar', Icons.get('drive')),
                 h('span.cp-creation-team-name', Messages.settings_cat_drive)
             ]));
             team = h('div.cp-creation-teams', [
@@ -2469,7 +2873,7 @@ define([
             UI.createCheckbox('cp-creation-expire', Messages.creation_expiration, false, {
                 labelAlt: Messages.creation_expiresIn
             }),
-            h('span.cp-creation-expire-picker.cp-creation-slider', [
+            h('form.cp-creation-expire-picker.cp-creation-slider', { autocomplete: "off" }, [
                 h('input#cp-creation-expire-val', {
                     type: "number",
                     min: 1,
@@ -2488,10 +2892,17 @@ define([
         ]);
 
         // Password
-        var password = h('div.cp-creation-password', [
+        let text;
+        if (type === 'form') {
+            text =  h('div.cp-creation-password-warning.alert.alert-info.dismissable',{
+                role: 'alert',
+                'aria-live': 'assertive'
+            }, h('span.cp-inline-alert-text', Messages.form_passwordWarning));
+        }
+        var password = h('div.cp-creation-password',  [ 
             UI.createCheckbox('cp-creation-password', Messages.properties_addPassword, false),
             h('span.cp-creation-password-picker.cp-creation-slider', [
-                UI.passwordInput({id: 'cp-creation-password-val'})
+                UI.passwordInput({id: 'cp-creation-password-val', placeholder: Messages.properties_addPassword})
                 /*h('input#cp-creation-password-val', {
                     type: "text" // TODO type password with click to show
                 }),*/
@@ -2502,16 +2913,20 @@ define([
         var $w = $(window);
         var big = $w.width() > 800;
 
-        var right = h('span.fa.fa-chevron-right.cp-creation-template-more');
-        var left = h('span.fa.fa-chevron-left.cp-creation-template-more');
+        var right = h('button.cp-creation-template-more', {
+            'aria-label': Messages.page_next
+        }, Icons.get('chevron-right'));
+        var left = h('button.cp-creation-template-more', {
+            'aria-label': Messages.page_previous
+        }, Icons.get('chevron-left'));
         if (!big) {
-            $(left).removeClass('fa-chevron-left').addClass('fa-chevron-up');
-            $(right).removeClass('fa-chevron-right').addClass('fa-chevron-down');
+            $(left).empty().append(Icons.get('chevron-up'));
+            $(right).empty().append(Icons.get('chevron-down'));
         }
         var templates = h('div.cp-creation-template', [
             left,
             h('div.cp-creation-template-container', [
-                h('span.fa.fa-circle-o-notch.fa-spin.fa-4x.fa-fw')
+                Icons.get('loading')
             ]),
             right
         ]);
@@ -2526,6 +2941,7 @@ define([
                 expire,
                 password,
             ]),
+            text,
             templates,
             createDiv
         ])).appendTo($creation);
@@ -2534,7 +2950,6 @@ define([
 
         var selected = 0; // Selected template in the list (highlighted)
         var TEMPLATES_DISPLAYED = big ? 6 : 3; // Max templates displayed per page
-        var next = function () {}; // Function called when pressing tab to highlight the next template
         var i = 0; // Index of the first template displayed in the current page
         sframeChan.query("Q_CREATE_TEMPLATES", type, function (err, res) {
             if (!res.data || !Array.isArray(res.data)) {
@@ -2552,18 +2967,14 @@ define([
                 allData.unshift({
                     name: Messages.creation_newTemplate,
                     id: -1,
-                    //icon: h('span.fa.fa-bookmark')
-                    icon: h('span.cptools.cptools-new-template')
+                    icon: Icons.get('file-template')
                 });
             }*/
-            if (!privateData.newTemplate) {
-                allData.unshift({
-                    name: Messages.creation_noTemplate,
-                    id: 0,
-                    //icon: h('span.fa.fa-file')
-                    icon: UI.getFileIcon({type: type})
-                });
-            }
+            allData.unshift({
+                name: Messages.creation_noTemplate,
+                id: 0,
+                icon: UI.getFileIcon({type: type})
+            });
             var redraw = function (index) {
                 if (index < 0) { i = 0; }
                 else if (index > allData.length - 1) { return; }
@@ -2575,19 +2986,27 @@ define([
                     var $span = $('<span>', {
                         'class': 'cp-creation-template-element',
                         'title': name,
+                        'aria-label': name,
+                        'tabindex': 0,
+                        'role':'radio',
+                        'aria-checked': false,
                     }).appendTo($container);
                     $span.data('id', obj.id);
                     if (obj.content) { $span.data('content', obj.content); }
-                    if (idx === selected) { $span.addClass('cp-creation-template-selected'); }
+                    if (idx === selected) {
+                        $span.addClass('cp-creation-template-selected');
+                        $span.attr('aria-checked', true);
+                    }
                     if (!obj.thumbnail) {
-                        $span.append(obj.icon || h('span.cptools.cptools-template'));
+                        $span.append(obj.icon || Icons.get('file-template'));
                     }
                     $('<span>', {'class': 'cp-creation-template-element-name'}).text(name)
                         .appendTo($span);
-                    $span.click(function () {
+                    Util.onClickEnter($span, function () {
                         $container.find('.cp-creation-template-selected')
-                            .removeClass('cp-creation-template-selected');
+                            .removeClass('cp-creation-template-selected').attr('aria-checked', 'false');
                         $span.addClass('cp-creation-template-selected');
+                        $span.attr('aria-checked', true);
                         selected = idx;
                     });
 
@@ -2599,11 +3018,13 @@ define([
                 $(right).off('click').removeClass('hidden').click(function () {
                     selected = 0;
                     redraw(i + TEMPLATES_DISPLAYED);
+                    $('.cp-creation-template-container').find('[tabindex]:not([tabindex="-1"])').filter(':visible').first().focus();
                 });
                 if (i >= allData.length - TEMPLATES_DISPLAYED ) { $(right).addClass('hidden'); }
                 $(left).off('click').removeClass('hidden').click(function () {
                     selected = TEMPLATES_DISPLAYED - 1;
                     redraw(i - TEMPLATES_DISPLAYED);
+                    $('.cp-creation-template-container').find('[tabindex]:not([tabindex="-1"])').filter(':visible').first().focus();
                 });
                 if (i < TEMPLATES_DISPLAYED) { $(left).addClass('hidden'); }
             };
@@ -2613,7 +3034,7 @@ define([
                         name: fromFileData.title,
                         id: 0,
                         thumbnail: thumbnail,
-                        icon: h('span.cptools.cptools-file'),
+                        icon: Icons.get('file'),
                     }];
                     redraw(0);
                 };
@@ -2627,7 +3048,7 @@ define([
                 allData = [{
                     name: fromContent.title,
                     id: 0,
-                    icon: h('span.cptools.cptools-poll'),
+                    icon: Icons.get('poll'),
                 }];
                 redraw(0);
             }
@@ -2635,37 +3056,16 @@ define([
                 redraw(0);
             }
 
-
-            // Change template selection when Tab is pressed
-            next = function (revert) {
-                var max = $creation.find('.cp-creation-template-element').length;
-                if (selected + 1 === max && !revert) {
-                    selected = i + TEMPLATES_DISPLAYED < allData.length ? 0 : max;
-                    return void redraw(i + TEMPLATES_DISPLAYED);
-                }
-                if (selected === 0 && revert) {
-                    selected = i - TEMPLATES_DISPLAYED >= 0 ? TEMPLATES_DISPLAYED - 1 : 0;
-                    return void redraw(i - TEMPLATES_DISPLAYED);
-                }
-                selected = revert ?
-                            (--selected < 0 ? 0 : selected) :
-                            ++selected >= max ? max-1 : selected;
-                $creation.find('.cp-creation-template-element')
-                    .removeClass('cp-creation-template-selected');
-                $($creation.find('.cp-creation-template-element').get(selected))
-                    .addClass('cp-creation-template-selected');
-            };
-
             $w.on('resize', function () {
                 var _big = $w.width() > 800;
                 if (big === _big) { return; }
                 big = _big;
                 if (!big) {
-                    $(left).removeClass('fa-chevron-left').addClass('fa-chevron-up');
-                    $(right).removeClass('fa-chevron-right').addClass('fa-chevron-down');
+                    $(left).empty().append(Icons.get('chevron-up'));
+                    $(right).empty().append(Icons.get('chevron-down'));
                 } else {
-                    $(left).removeClass('fa-chevron-up').addClass('fa-chevron-left');
-                    $(right).removeClass('fa-chevron-down').addClass('fa-chevron-right');
+                    $(left).empty().append(Icons.get('chevron-left'));
+                    $(right).empty().append(Icons.get('chevron-right'));
                 }
                 TEMPLATES_DISPLAYED = big ? 6 : 3;
                 redraw(0);
@@ -2682,7 +3082,6 @@ define([
             }
             $creation.find('.cp-creation-expire-picker').removeClass('active');
             $creation.find('.cp-creation-expire').removeClass('active');
-            $creation.focus();
         });
 
         // Display password form when checkbox checked
@@ -2695,7 +3094,6 @@ define([
             }
             $creation.find('.cp-creation-password-picker').removeClass('active');
             $creation.find('.cp-creation-password').removeClass('active');
-            $creation.focus();
         });
 
         // Keyboard shortcuts
@@ -2733,7 +3131,7 @@ define([
                     case "month": unit = 3600 * 24 * 30; break;
                     default: unit = 0;
                 }
-                expireVal = ($('#cp-creation-expire-val').val() || 0) * unit;
+                expireVal = (Math.min(Number($('#cp-creation-expire-val').val()), 100) || 0) * unit;
             }
             // Password
             var passwordVal = $('#cp-creation-password').is(':checked') ?
@@ -2785,19 +3183,8 @@ define([
             create();
         });
 
-        $creation.keydown(function (e) {
-            if (e.which === 9) {
-                e.preventDefault();
-                e.stopPropagation();
-                next(e.shiftKey);
-                return;
-            }
-            if (e.which === 13) {
-                $button.click();
-                return;
-            }
-        });
-        $creation.focus();
+        UI.addTabListener($creation);
+        $button.focus();
     };
 
     UIElements.loginErrorScreenContent = function (common) {
@@ -2815,12 +3202,14 @@ define([
     UIElements.onServerError = function (common, err, toolbar, cb) {
         //if (["EDELETED", "EEXPIRED", "ERESTRICTED"].indexOf(err.type) === -1) { return; }
         var priv = common.getMetadataMgr().getPrivateData();
+        var viewer = priv.readOnly || err.viewer;
         var sframeChan = common.getSframeChannel();
         var msg = err.type;
+        var exitable = Boolean(err.loaded);
         if (err.type === 'EEXPIRED') {
             msg = Messages.expiredError;
             if (err.loaded) {
-                // XXX You can still use the current version in read-only mode by pressing Esc.
+                // You can still use the current version in read-only mode by pressing Esc.
                 // what if they don't have a keyboard (ie. mobile)
                 msg += Messages.errorCopy;
             }
@@ -2833,6 +3222,23 @@ define([
                 delete autoStoreModal[priv.channel];
             }
 
+            if (err.message && err.drive) {
+                let msg = UI.getDestroyedPlaceholder(err.message, true, false, true);
+                return UI.errorLoadingScreen(msg, false, () => {
+                    // When closing error screen
+                    if (err.message === 'PASSWORD_CHANGE') {
+                        return common.setLoginRedirect('login');
+                    }
+                    return common.setLoginRedirect('');
+                });
+            }
+            if (err.message && (err.message !== "PASSWORD_CHANGE" || viewer)) {
+                // If readonly, tell the viewer that their link won't work with the new password
+                UI.errorLoadingScreen(UI.getDestroyedPlaceholder(err.message, false),
+                    exitable, exitable, true);
+                return;
+            }
+
             if (err.ownDeletion) {
                 if (toolbar && typeof toolbar.deleted === "function") { toolbar.deleted(); }
                 (cb || function () {})();
@@ -2841,7 +3247,7 @@ define([
 
             // View users have the wrong seed, thay can't retireve access directly
             // Version 1 hashes don't support passwords
-            if (!priv.readOnly && !priv.oldVersionHash) {
+            if (!viewer && !priv.oldVersionHash) {
                 sframeChan.event('EV_SHARE_OPEN', {hidden: true}); // Close share modal
                 UIElements.displayPasswordPrompt(common, {
                     fromServerError: true,
@@ -2865,6 +3271,10 @@ define([
             }
 
             if (toolbar && typeof toolbar.failed === "function") { toolbar.failed(true); }
+            sframeChan.event('EV_SHARE_OPEN', {hidden: true});
+            UI.errorLoadingScreen(msg, false, false);
+            (cb || function () {})();
+            return;
         } else if (err.type === 'HASH_NOT_FOUND' && priv.isHistoryVersion) {
             msg = Messages.oo_deletedVersion;
             if (toolbar && typeof toolbar.failed === "function") { toolbar.failed(true); }
@@ -2876,9 +3286,17 @@ define([
 
     UIElements.displayPasswordPrompt = function (common, cfg, isError) {
         var error;
-        if (isError) { error = setHTML(h('p.cp-password-error'), Messages.password_error); }
+        if (isError) {
+            let msg = isError === 'PASSWORD_CHANGE' ? Messages.drive_sfPasswordError : Messages.password_error;
+            error = setHTML(h('p.cp-password-error'), msg);
+        }
 
-        var info = h('p.cp-password-info', Messages.password_info);
+        var pwMsg = UI.getDestroyedPlaceholderMessage('PASSWORD_CHANGE', false);
+        if (cfg.legacy) {
+            // Legacy mode: we don't know if the pad has been destroyed or its password has changed
+            pwMsg = Messages.password_info;
+        }
+        var info = h('p.cp-password-info', pwMsg);
         var info_loaded = setHTML(h('p.cp-password-info'), Messages.errorCopy);
 
         var password = UI.passwordInput({placeholder: Messages.password_placeholder});
@@ -2915,8 +3333,16 @@ define([
                 });
             }
             common.getSframeChannel().query('Q_PAD_PASSWORD_VALUE', value, function (err, data) {
-                if (!data) {
-                    return void UIElements.displayPasswordPrompt(common, cfg, true);
+                data = data || {};
+                if (!data.state && data.view && data.reason === "PASSWORD_CHANGE") {
+                    return UIElements.onServerError(common, {
+                        type: 'EDELETED',
+                        message: data.reason,
+                        viewer: data.view
+                    });
+                }
+                if (!data.state) {
+                    return void UIElements.displayPasswordPrompt(common, cfg, (data && data.reason) || 1);
                 }
             });
         };
@@ -2936,7 +3362,6 @@ define([
             ]),
         ]);
         UI.errorLoadingScreen(block, Boolean(cfg.loaded), Boolean(cfg.loaded));
-
         $password.find('.cp-password-input').focus();
     };
 
@@ -2955,6 +3380,7 @@ define([
             }, button),
         ]);
         UI.errorLoadingScreen(block);
+        $(button).focus();
     };
     UIElements.getBurnAfterReadingWarning = function (common) {
         var priv = common.getMetadataMgr().getPrivateData();
@@ -2966,39 +3392,70 @@ define([
     UIElements.displayCrowdfunding = function (common, force) {
         if (crowdfundingState) { return; }
         var priv = common.getMetadataMgr().getPrivateData();
-
+        if (priv.app === 'drive') { return; }
+        if (!priv.channel) { return; }
+        if (priv.app === 'form' && priv.readOnly && !priv.form_auditorHash && !priv.form_auditorKey) { return; }
 
         var todo = function () {
             crowdfundingState = true;
-            // Display the popup
-            var text = Messages.crowdfunding_popup_text;
-            var yes = h('button.cp-corner-primary', [
-                h('span.fa.fa-external-link'),
-                'OpenCollective'
-            ]);
-            var no = h('button.cp-corner-cancel', Messages.crowdfunding_popup_no);
-            var actions = h('div', [no, yes]);
-
+            var recordShown = function () {
+                common.getSframeChannel().query('Q_RECORD_CROWDFUNDING_SHOWN', {}, function () {});
+            };
             var dontShowAgain = function () {
                 common.setAttribute(['general', 'crowdfunding'], false);
                 Feedback.send('CROWDFUNDING_NEVER');
             };
 
-            var modal = UI.cornerPopup(text, actions, '', {
-                big: true,
-                alt: true,
-                dontShowAgain: dontShowAgain
+            var content = Messages.crowdfunding_popup_text;
+            var buttons = [{
+                name: Messages.dontShowAgain,
+                className: 'cancel left',
+                iconClass: 'close',
+                onClick: function () {
+                    recordShown();
+                    dontShowAgain();
+                }
+            }, {
+                name: Messages.crowdfunding_popup_no,
+                className: 'cancel',
+                iconClass: 'crowdfunding-snooze',
+                onClick: function () {
+                    recordShown();
+                    Feedback.send('CROWDFUNDING_NO');
+                }
+            }];
+            if (!Config.removeDonateButton) {
+                buttons.push({
+                    name: Messages.crowdfunding_button2,
+                    className: 'primary',
+                    iconClass: 'crowdfunding-donate',
+                    onClick: function () {
+                        recordShown();
+                        common.openURL(priv.accounts.donateURL);
+                        Feedback.send('CROWDFUNDING_YES');
+                    }
+                });
+            }
+            if (Config.accounts_api && common.isLoggedIn()) {
+                content += ' ' + Messages.crowdfunding_popup_text2;
+                buttons.push({
+                    name: Messages.features_f_subscribe,
+                    className: 'primary',
+                    iconClass: 'crowdfunding-donate2',
+                    onClick: function () {
+                        recordShown();
+                        common.openURL('/accounts/');
+                        Feedback.send('CROWDFUNDING_SUBSCRIBE');
+                    }
+                });
+            }
+            var modal = UI.dialog.customModal(content, {
+                force: true,
+                scrollable: true,
+                buttons: buttons
             });
-
-            $(yes).click(function () {
-                modal.delete();
-                common.openURL(priv.accounts.donateURL);
-                Feedback.send('CROWDFUNDING_YES');
-            });
-            $(no).click(function () {
-                modal.delete();
-                Feedback.send('CROWDFUNDING_NO');
-            });
+            $(modal).addClass('cp-crowdfunding-modal');
+            UI.openCustomModal(modal, { wide: true });
         };
 
         if (force) {
@@ -3008,13 +3465,16 @@ define([
 
         if (AppConfig.disableCrowdfundingMessages) { return; }
         if (priv.plan) { return; }
+        if (Config.removeDonateButton && !Config.accounts_api) { return; }
 
         crowdfundingState = true;
         common.getAttribute(['general', 'crowdfunding'], function (err, val) {
-            if (err || val === false) { return; }
-            common.getSframeChannel().query('Q_GET_PINNED_USAGE', null, function (err, obj) {
-                var quotaMb = obj.quota / (1024 * 1024);
-                if (quotaMb < 10) { return; }
+            if (err || val === false) { crowdfundingState = false; return; }
+            common.getSframeChannel().query('Q_CROWDFUNDING_SHOULD_SHOW', null, function (err, result) {
+                if (err || !result || !result.show) {
+                    crowdfundingState = false;
+                    return;
+                }
                 todo();
             });
         });
@@ -3035,8 +3495,7 @@ define([
 
         // This pad will be deleted automatically, it shouldn't be stored
         if (priv.burnAfterReading) { return; }
-
-
+        if (priv.app === 'form' && priv.readOnly && !priv.form_auditorHash && !priv.form_auditorKey && !common.isLoggedIn()) { return; }
         var typeMsg = priv.pathname.indexOf('/file/') !== -1 ? Messages.autostore_file :
                         priv.pathname.indexOf('/drive/') !== -1 ? Messages.autostore_sf :
                           Messages.autostore_pad;
@@ -3100,7 +3559,7 @@ define([
             Messages._getKey('formattedMB', [mb])
         ]);
         var yes = h('button.cp-corner-primary', [
-            h('span.fa.fa-trash-o'),
+            Icons.get('trash-full'),
             Messages.trimHistory_button
         ]);
         var no = h('button.cp-corner-cancel', Messages.crowdfunding_popup_no); // Not now
@@ -3226,14 +3685,15 @@ define([
 
         var text = Messages._getKey('owner_add', [name, title]);
 
+        var obj = { pw: msg.content.password || '', f: 1 };
+        let newHref = Hash.getNewPadURL(msg.content.href, obj);
         var link = h('a', {
-            href: '#'
+            href: newHref
         }, Messages.requestEdit_viewPad);
         $(link).click(function (e) {
             e.preventDefault();
             e.stopPropagation();
-            var obj = { pw: msg.content.password || '' };
-            common.openURL(Hash.getNewPadURL(msg.content.href, obj));
+            common.openURL(newHref);
         });
 
         var div = h('div', [
@@ -3288,7 +3748,7 @@ define([
 
                     // Add the pad to your drive
                     // This command will also add your mailbox to the metadata log
-                    // The callback is called when the pad is stored, independantly of the metadata command
+                    // The callback is called when the pad is stored, independently of the metadata command
                     if (data.calendar) {
                         var calendarModule = common.makeUniversal('calendar');
                         var calendarData = data.calendar;
@@ -3472,7 +3932,7 @@ define([
         if (priv.friends && priv.friends[curve]) {
             $verified.addClass('cp-notifications-requestedit-verified');
             var f = priv.friends[curve];
-            $verified.append(h('span.fa.fa-certificate'));
+            $verified.append(Icons.get('certificate'));
             var $avatar = $(h('span.cp-avatar')).appendTo($verified);
             name = UI.getDisplayName(f.displayName);
             $verified.append(h('p', Messages._getKey('isContact', [name])));
@@ -3514,9 +3974,9 @@ define([
             });
         };
 
-        var MAX_TEAMS_SLOTS = Constants.MAX_TEAMS_SLOTS;
         var todo = function (yes) {
             var priv = common.getMetadataMgr().getPrivateData();
+            var MAX_TEAMS_SLOTS = priv.plan ? Constants.MAX_PREMIUM_TEAMS_SLOTS : Constants.MAX_TEAMS_SLOTS;
             var numberOfTeams = Object.keys(priv.teams || {}).length;
             if (yes) {
                 if (numberOfTeams >= MAX_TEAMS_SLOTS) {
@@ -3876,7 +4336,7 @@ define([
                 var openButton = h('button.cp-snapshot-view.btn.btn-light', {
                     tabindex: 1,
                 }, [
-                    h('i.fa.fa-eye'),
+                    Icons.get('preview'),
                     h('span', Messages.snapshots_open)
                 ]);
                 $(openButton).click(function () {
@@ -3889,7 +4349,7 @@ define([
                 var deleteButton = h('button.cp-snapshot-delete.btn.btn-light', {
                     tabindex: 1,
                 }, [
-                    h('i.fa.fa-trash'),
+                    Icons.get('trash-full'),
                     h('span', Messages.snapshots_delete)
                 ]);
                 UI.confirmButton(deleteButton, {
@@ -3900,7 +4360,7 @@ define([
                 });
 
                 return h('span.cp-snapshot-element', {tabindex:1}, [
-                    h('i.fa.fa-camera'),
+                    Icons.get('snapshot'),
                     h('span.cp-snapshot-title', [
                         h('span', s.title),
                         h('span.cp-snapshot-time', new Date(s.time).toLocaleString())
@@ -3929,14 +4389,15 @@ define([
         if (!readOnly) {
             buttons.push({
                 className: 'primary',
-                iconClass: '.fa.fa-camera',
+                iconClass: 'snapshot',
                 name: Messages.snapshots_new,
                 onClick: function () {
                     var val = $input.val();
                     if (!val) { return true; }
                     $container.html('').append(h('div.cp-snapshot-spinner'));
                     var to = setTimeout(function () {
-                        UI.spinner($container.find('div')).get().show();
+                        var spinner = UI.makeSpinner($container.find('div'));
+                        spinner.spin();
                     });
                     make(val, function (err) {
                         clearTimeout(to);
@@ -3954,6 +4415,405 @@ define([
 
         modal = UI.openCustomModal(UI.dialog.customModal(content, {buttons: buttons }));
     };
+
+    UIElements.onMissingMFA = (common, config, cb) => {
+        let content = h('div');
+        let msg = h('div.cp-loading-missing-mfa', [
+            h('div.alert.alert-warning', Messages.loading_mfa_required),
+            content
+        ]);
+        common.totpSetup(config, content, false, (newState) => {
+            if (!newState) {
+                return void UI.errorLoadingScreen(Messages.error);
+            }
+            cb({state: true});
+        });
+        return UI.errorLoadingScreen(msg, false, false);
+    };
+
+    UIElements.makePalette = (maxColors, onSelect) => {
+        let palette = [''];
+        for (var i=1; i<=maxColors; i++) { palette.push('color'+i); }
+
+        let offline = false;
+        let selectedColor = '';
+        let container = h('div.cp-palette-container');
+        let $container = $(container);
+
+        var all = [];
+        palette.forEach(function (color, i) {
+            var $color = $(h('button.cp-palette-color'));
+            all.push($color);
+            $color.addClass('cp-palette-'+(color || 'nocolor'));
+            const checkIcon = Icons.get('check');
+            $(checkIcon).addClass('cp-check-icon is-hidden'); // added hidden class to overcome Lucide rendering
+            $color.append(checkIcon);
+            $color.keydown(function (e) {
+                if (e.which === 13) {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    $color.click();
+                }
+            });
+            $color.click(function () {
+                if (offline) { return; }
+                if (color === selectedColor) { return; }
+                $container.find('.cp-palette-color').find('.cp-check-icon').addClass('is-hidden');
+                $(this).find('.cp-check-icon').removeClass('is-hidden');
+                selectedColor = color;
+                onSelect(color, $color);
+            }).appendTo($container);
+            $color.keydown(e => {
+                if (e.which === 37) {
+                    e.preventDefault();
+                    if (i === 0) {
+                        all[all.length - 1].focus();
+                    } else {
+                        all[i - 1].focus();
+                    }
+                }
+                if (e.which === 39) {
+                    e.preventDefault();
+                    if (i === (all.length - 1)) {
+                        all[0].focus();
+                    } else {
+                        all[i + 1].focus();
+                    }
+                }
+                if (e.which === 9) {
+                    if (e.shiftKey) {
+                        all[0].focus();
+                        return;
+                    }
+                    all[all.length - 1].focus();
+                }
+            });
+        });
+
+        container.disable = state => {
+            offline = !!state;
+        };
+        container.getValue = () => {
+            return selectedColor;
+        };
+        container.setValue = color => {
+            $container.find('.cp-palette-color').find('.cp-check-icon').addClass('is-hidden');
+            let $color = $container.find('.cp-palette-'+(color || 'nocolor'));
+            if ($color.length) {
+                $color.find('.cp-check-icon').removeClass('is-hidden');
+            }
+            selectedColor = color;
+        };
+        return container;
+    };
+
+    UIElements.reorderDOM = function ($content, isDrawer) {
+        var reorderDOM = Util.throttle(function ($content, observer) {
+            if (!$content.length) { return; }
+
+            // List all children based on their "order" property
+            var map = {};
+            $content[0].childNodes.forEach((node) => {
+                try {
+                    if (!node.attributes) { return; }
+                    let nodeWithOrder;
+                    if (isDrawer) { // HACK: the order is set on their inner "a" tag
+                        let $n = $(node);
+                        if (!$n.attr('class') && $n.find('.lucide').length) {
+                            nodeWithOrder = $n.find('.lucide')[0];
+                        }
+                    }
+                    var order = getComputedStyle(nodeWithOrder || node).getPropertyValue("order");
+                    var a = map[order] = map[order] || [];
+                    a.push(node);
+                } catch (e) { console.error(e, node); }
+            });
+
+            // Disconnect the observer while we're reordering to avoid infinite loop
+            observer.disconnect();
+            Object.keys(map).sort(function (a, b) {
+                return Number(a) - Number(b);
+            }).forEach(function (k) {
+                var arr = map[k];
+                if (!Number(k)) { return; } // No need to "append" if order is -1
+                // Reorder
+                arr.forEach(function (node) {
+                    $content.append(node);
+                });
+            });
+            observer.start();
+        }, 100);
+
+        let observer = new MutationObserver(function(mutations) {
+            mutations.forEach(function(mutation) {
+                if (mutation.addedNodes.length) {
+                    reorderDOM($content, observer);
+                }
+            });
+        });
+        observer.start = function () {
+            if (!$content.length) { return; }
+            observer.observe($content[0], {
+                childList: true
+            });
+        };
+        observer.start();
+    };
+
+    var lexicographicCompare = function(a, b) {
+        if (!Array.isArray(a)) {
+            a = [a];
+        }
+        if (!Array.isArray(b)) {
+            b = [b];
+        }
+
+        if (a.length === 0 && b.length === 0) {
+            return 0;
+        } else if (a.length === 0) {
+            return -1;
+        } else if (b.length === 0) {
+            return 1;
+        } else if (typeof (a[0]) !== typeof (b[0])) {
+            return String(a[0]) < String(b[0]) ? -1 : 1;
+        } else {
+            if (a[0] < b[0]) {
+                return -1;
+            } else if (a[0] > b[0]) {
+                return 1;
+            } else {
+                return lexicographicCompare(a.slice(1), b.slice(1));
+            }
+        }
+    };
+
+    var splitStringToTextAndNumbers = function(s) {
+        var textOrDigitsRe = /(?<text>\D+)?(?<digits>\d+)?/g;
+        var split = [];
+
+        for (var match of s.matchAll(textOrDigitsRe)) {
+            if (match.groups.text !== undefined) {
+                split.push(match.groups.text);
+            }
+            if (match.groups.digits !== undefined) {
+                split.push(parseInt(match.groups.digits));
+            }
+        }
+
+        return split;
+    };
+
+    var naturalSort = function(a, b) {
+        if (typeof(a) === "string") {
+            a = splitStringToTextAndNumbers(a);
+        }
+        if (typeof(b) === "string") {
+            b = splitStringToTextAndNumbers(b);
+        }
+
+        var comp = lexicographicCompare(a, b);
+        return comp;
+    };
+
+    var isSubpath = function(child, parentPath) {
+        if (!child || !parentPath || child.length <= parentPath.length) { return false; }
+        for (var i = 0; i < parentPath.length; i++) {
+            if (child[i] !== parentPath[i]) { return false; }
+        }
+        return true;
+    };
+
+    var shouldBeOpened = function(path, openFolders, currentPath) {
+        if (openFolders && openFolders.length) {
+            for (var i = 0; i < openFolders.length; i++) {
+                var openPath = openFolders[i];
+                if (JSON.stringify(openPath) === JSON.stringify(path)) {
+                    return true;
+                }
+            }
+        }
+        // Auto-expand parent folders of current path
+        if (currentPath && isSubpath(currentPath, path) && path.length < currentPath.length) {
+            if (currentPath.length > 0 && currentPath.length - path.length > 1) { // only auto-expand if currentPath is at least 2 levels deeper than the folder path
+                return true;
+            }
+        }
+        return false;
+    };
+
+    UIElements.createTreeElement = function (name, $icon, path, draggable, droppable, collapsable, active, events, openFolders, currentPath, cb) {
+        events = events || {};
+        openFolders = openFolders || [];
+        currentPath = currentPath || null;
+        cb = cb || {};
+        var $expandIcon = $(Icons.get('chevron-right'));
+        var $expandedIcon = $(Icons.get('chevron-down'));
+
+        var $name = $('<span>', { 'class': 'cp-app-drive-element' }).text(name);
+        var $collapse;
+        if (collapsable) {
+            $collapse = $('<span>').attr('tabindex', 0).attr('class', 'cp-app-drive-icon-expcol').append($expandIcon.clone());
+        }
+        var $elementRow = $('<span>', {
+            'class': 'cp-app-drive-element-row cp-app-drive-element-folder',
+            'tabindex': 0
+        }).append($collapse).append($icon).append($name).on('click keypress', function (e) {
+            if (e.type === 'keypress' && e.which !== 13) {
+                return;
+            }
+            e.stopPropagation();
+            if (events.onFolderClicked) {
+                events.onFolderClicked(path, e);
+            }
+        });
+
+        if (events.onContextMenu) {
+            $elementRow.on('contextmenu', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                events.onContextMenu(path, e);
+            });
+        }
+
+        var $element = $('<li>').append($elementRow);
+        if (draggable) {
+            $elementRow.attr('draggable', true);
+        }
+        if (collapsable) {
+            $element.addClass('cp-app-drive-element-collapsed');
+            $collapse.attr({
+                'aria-expanded': 'false',
+                'role': 'button',
+                'aria-label': Messages.ui_expand
+            });
+            $collapse.on('click keypress', function(e) {
+                if (e.type === 'keypress' && e.which !== 13) {
+                    return;
+                }
+                e.stopPropagation();
+                if ($element.hasClass('cp-app-drive-element-collapsed')) {
+                    $element.removeClass('cp-app-drive-element-collapsed');
+                    $collapse.empty().append($expandedIcon.clone());
+                    $collapse.attr('aria-expanded', 'true');
+                    $collapse.attr('aria-label', Messages.ui_collapse);
+                    if (events.onFolderExpanded) {
+                        events.onFolderExpanded(path, true);
+                    }
+                } else {
+                    $element.addClass('cp-app-drive-element-collapsed');
+                    $collapse.empty().append($expandIcon.clone());
+                    $collapse.attr('aria-expanded', 'false');
+                    $collapse.attr('aria-label', Messages.ui_expand);
+                    if (events.onFolderExpanded) {
+                        events.onFolderExpanded(path, false);
+                    }
+                }
+            });
+            // Auto-expand if explicitly marked as opened
+            var shouldExpand = shouldBeOpened(path, openFolders, currentPath);
+            
+            if (shouldExpand) {
+                $element.removeClass('cp-app-drive-element-collapsed');
+                $collapse.empty().append($expandedIcon.clone());
+                $collapse.attr('aria-expanded', 'true');
+                $collapse.attr('aria-label', Messages.ui_collapse);
+            }
+        }
+        $elementRow.data('path', path);
+        if (typeof cb.addDragAndDropHandlers === 'function') {
+            cb.addDragAndDropHandlers($elementRow, path, true, droppable);
+        }
+        if (active) {
+            $elementRow.addClass('cp-app-drive-element-active cp-leftside-active');
+        }
+        return $element;
+    };
+
+    UIElements.getTree = function (data, config) {
+        config = config || {};
+        config.events = config.events || {};
+        config.cb = config.cb || {};
+        config.openFolders = config.openFolders || [];
+        config.currentPath = config.currentPath || null;
+
+        var $folderIcon = $(Icons.get('folder'));
+        var $folderOpenedIcon = $(Icons.get('folder-open'));
+
+
+        var createTree = function ($container, folderData, path) {
+            if (!folderData || !folderData.content) { return; }
+
+            var $list = $('<ul>').appendTo($container);
+            var keys = Object.keys(folderData.content).sort(function (a, b) {
+                var nameA = folderData.content[a].name || a;
+                var nameB = folderData.content[b].name || b;
+                return naturalSort(nameA, nameB);
+            });
+
+            keys.forEach(function (key) {
+                var item = folderData.content[key];
+                if (!item) { return; }
+                
+                var name = item.name || key;
+                var newPath;
+                if (item.navPath) {
+                    newPath = item.navPath;
+                } else {
+                    // Fallback: reconstruct from parent path (for backwards compatibility)
+                    var p = path.slice();
+                    p.push(key);
+                    newPath = p;
+                }
+                var $icon;
+                if (item.icon) {
+                    if (typeof item.icon === 'string') {
+                        $icon = $(Icons.get(item.icon));
+                    } else {
+                        $icon = $(item.icon);
+                    }
+                } else {
+                    var shouldShowOpened = shouldBeOpened(newPath, config.openFolders, config.currentPath);
+                    $icon = shouldShowOpened ? $folderOpenedIcon.clone() : $folderIcon.clone();
+                }
+                
+                var hasSubfolder = item.content && Object.keys(item.content).length > 0;
+                var isActive = item.isActive !== undefined ? item.isActive : (config.currentPath && JSON.stringify(newPath) === JSON.stringify(config.currentPath));
+                var $element = UIElements.createTreeElement(name, $icon.clone(), newPath, true, true, hasSubfolder, isActive, config.events, config.openFolders, config.currentPath, config.cb);
+                $element.appendTo($list);
+                
+                if (hasSubfolder) {
+                    createTree($element, item, newPath);
+                }
+            });
+        };
+        var content = [];
+        var rootKey = Object.keys(data)[0];
+        var rootData = data[rootKey];
+        
+        if (rootData) {
+            var rootName = rootData.name || Messages.fm_rootName;
+            var $rootIcon = rootData.icon ? 
+                (typeof rootData.icon === 'string' ? $(Icons.get(rootData.icon)) : $(rootData.icon)) :
+                $(Icons.get('drive'));
+            
+            var hasContent = rootData.content && Object.keys(rootData.content).length > 0;
+            var isRootActive = config.currentPath && JSON.stringify([rootKey]) === JSON.stringify(config.currentPath);
+            var $rootElement = UIElements.createTreeElement(rootName, $rootIcon, [rootKey], false, true, hasContent, isRootActive, config.events, config.openFolders, config.currentPath, config.cb);
+            $rootElement.addClass('cp-app-drive-tree-root');
+            
+            if (!hasContent) {
+                $rootElement.find('.cp-app-drive-icon-expcol').addClass('cp-icon-hidden').attr('tabindex','-1');
+            }
+            var $rootList = $('<ul>', {'class': 'cp-app-drive-tree-docs'}).append($rootElement);
+            content.push($rootList[0]);
+            
+            if (hasContent) {
+                createTree($rootElement, rootData, [rootKey]);
+            }
+        }
+        return h('div.cp-drive-tree', content);
+    };
+
 
     return UIElements;
 });

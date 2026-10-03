@@ -1,3 +1,9 @@
+/*
+ * SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
 @import (reference) '../../customize/src/less2/include/framework.less';
 @import (reference) '../../customize/src/less2/include/drive.less';
 @import (reference) '../../customize/src/less2/include/messenger.less';
@@ -39,6 +45,16 @@
         }
     }
 
+    .cp-spinner, .cp-ok {
+        svg {
+            margin: @variables_icon_margin;
+        }
+    }
+    .cp-spinner {
+        svg {
+            animation: spin 10s linear infinite;
+        }
+    }
     #cp-sidebarlayout-container {
         @media screen and (max-width: 900px) {
             .cp-app-drive-toolbar-leftside {
@@ -53,6 +69,14 @@
         div#cp-sidebarlayout-leftside {
             background-color: @cp_teams-leftside-bg;
         }
+        #cp-sidebarlayout-rightside{
+            input, button, textarea {
+                &:focus-visible {
+                    outline: @variables_focus_style;
+                }
+            }
+
+        }
         div#cp-sidebarlayout-rightside.cp-rightside-drive {
             padding: 0;
             & > .cp-team-chat {
@@ -64,7 +88,11 @@
                 }
                 .cp-app-contacts-input {
                     textarea {
-                        border: 0px;
+                        border: 0;
+                        margin-right: 2px;
+                    }
+                    svg {
+                        border-radius: @variables_radius;
                     }
                 }
             }
@@ -87,7 +115,7 @@
             }
         }
         .cp-team-cat-header {
-            justify-content: center;
+            justify-content: left;
             background-color: transparent !important;
             box-shadow: none !important;
             .avatar_main(30px);
@@ -97,6 +125,7 @@
             }
             media-tag, .cp-avatar-default {
                 margin-right: 3px;
+                flex-shrink: 0;
             }
             media-tag {
                 order: -1;
@@ -104,7 +133,12 @@
             cursor: default !important;
             font-size: 18px;
             span.cp-sidebarlayout-category-name {
+                max-width: 12rem;
                 padding-left: 5px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                min-width: 0;
             }
         }
         .cp-team-cat-chat {
@@ -133,6 +167,23 @@
                 height: 384px;
                 padding: 50px;
                 margin: 5px;
+                .cp-team-spinner-container {
+                    height: 200px;
+                    .cp-team-spinner {
+                        display: inline-block;
+                        box-sizing: border-box;
+                        width: 180px;
+                        height: 180px;
+                        border: 11px solid @cp_loading-logo;
+                        border-radius: 50%;
+                        border-top-color: transparent;
+                        animation: spin infinite 3s; // defined in loading.less
+                        animation-timing-function: cubic-bezier(.6,0.15,0.4,0.85);
+                    }
+                }
+                &:focus-visible {
+                    outline: @variables_focus_style;
+                }
                 &.create, &:not(.empty) {
                     cursor: pointer;
                     &:hover {
@@ -143,14 +194,13 @@
                     .avatar_main(200px);
                 }
                 .cp-team-list-name {
+                    word-wrap: break-word;
                     min-width: 0;
-                    overflow: hidden;
-                    white-space: nowrap;
+                    white-space: pre-wrap;
                     text-overflow: ellipsis;
-                    max-width: 500px;
+                    max-width: 250px;
                     font-size: 25px;
-                    display: inline-flex;
-                    align-items: center;
+                    text-align: center;
                     &.empty {
                         white-space: initial;
                         text-align: center;
@@ -169,8 +219,8 @@
                     display: flex;
                     align-items: center;
                     flex-flow: column;
-                    i {
-                        font-size: 40px;
+                    svg {
+                        margin: 0;
                     }
                 }
                 .cp-team-list-open {
@@ -183,6 +233,10 @@
             .cp-avatar img {
                 max-width: 100%;
                 max-height: 100%;
+                border-radius: @variables_radius_L;
+            }
+            .cp-avatar-default {
+                border-radius: @variables_radius_L;
             }
         }
         .cp-team-roster {
@@ -194,6 +248,9 @@
                 margin-bottom: 20px;
                 button:not(:last-child) {
                     margin-right: 5px;
+                }
+                .btn {
+                    margin-bottom: 5px;
                 }
             }
             .cp-team-roster-member {
@@ -229,13 +286,18 @@
                     .tools_unselectable();
                 }
                 .cp-team-member-actions {
-                    .fa {
+                    span{
+                        border-radius: @variables_radius;
+                        cursor: pointer;
+                        &:focus-visible {
+                            outline: @variables_focus_style;
+                        }
+                    }
+                    svg {
                         height: 25px;
                         width: 25px;
-                        display: inline-flex;
-                        justify-content: center;
-                        align-items: center;
-                        cursor: pointer;
+                        border-radius: @variables_radius;
+                        margin: 0;
                         &:hover {
                             background-color: @roster-bg-color-hover2;
                         }
@@ -270,9 +332,6 @@
             .cp-teams-invite-password {
                 margin-bottom: 20px;
             }
-            i.fa.fa-spin.fa-spinner {
-                margin-right: 10px;
-            }
         }
         div#cp-sidebarlayout-rightside .cp-team-offline {
             // Compensate #cp-sidebarlayout-rightside padding
@@ -284,6 +343,27 @@
             margin: 0;
         }
     }
+    .cp-team-trim {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .cp-teams-invite-uses {
+        input {
+            margin-bottom: 0px !important;
+            margin-right: 10px;
+            width: 75px !important;
+        }
+
+    }
+    .cp-teams-invite-role {
+        margin-bottom: 15px;
+        span:first-child {
+            margin-right: 10px;
+        }
+    }
+
 
     #cp-teams-roster-dialog {
         table {

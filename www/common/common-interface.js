@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 if (!document.querySelector("#alertifyCSS")) {
     // Prevent alertify from injecting CSS, we create our own in alertify.less.
     // see: https://github.com/alertifyjs/alertify.js/blob/v1.0.11/src/js/alertify.js#L414
@@ -14,18 +18,20 @@ define([
     '/common/common-hash.js',
     '/common/common-notifier.js',
     '/customize/application_config.js',
-    '/bower_components/alertifyjs/dist/js/alertify.js',
+    '/components/alertify.js/dist/js/alertify.js',
     '/lib/tippy/tippy.min.js',
     '/common/hyperscript.js',
     '/customize/loading.js',
+    '/common/common-icons.js',
+    '/common/clipboard.js',
     //'/common/test.js',
 
     '/lib/jquery-ui/jquery-ui.min.js', // autocomplete widget
-    '/bower_components/bootstrap-tokenfield/dist/bootstrap-tokenfield.js',
+    '/components/bootstrap-tokenfield/dist/bootstrap-tokenfield.js',
     'css!/lib/tippy/tippy.css',
     'css!/lib/jquery-ui/jquery-ui.min.css'
 ], function ($, Messages, Util, Hash, Notifier, AppConfig,
-            Alertify, Tippy, h, Loading/*, Test */) {
+            Alertify, Tippy, h, Loading, Icons, Clipboard /*, Test */) {
     var UI = {};
 
     /*
@@ -160,12 +166,12 @@ define([
 
     dialog.okButton = function (content, classString) {
         var sel = typeof(classString) === 'string'? 'button.ok.' + classString:'button.btn.ok.primary';
-        return h(sel, { tabindex: '2', }, content || Messages.okButton);
+        return h(sel, content || Messages.okButton);
     };
 
     dialog.cancelButton = function (content, classString) {
         var sel = typeof(classString) === 'string'? 'button.' + classString:'button.btn.cancel';
-        return h(sel, { tabindex: '1'}, content || Messages.cancelButton);
+        return h(sel, content || Messages.cancelButton);
     };
 
     dialog.message = function (text) {
@@ -208,6 +214,12 @@ define([
                 h('div'+cls, content),
             ])
         ]);
+
+        var dialogContent = frame.querySelector('div' + cls);
+        dialogContent.setAttribute('aria-live', 'assertive');
+        dialogContent.setAttribute('role', 'alertdialog');
+        dialogContent.setAttribute('aria-modal', 'true');
+
         var $frame = $(frame);
         frame.closeModal = function (cb) {
             frame.closeModal = function () {}; // Prevent further calls
@@ -236,11 +248,15 @@ define([
             if (!(tab.content || tab.disabled) || !tab.title) { return; }
             var content = h('div.alertify-tabs-content', tab.content);
             var title = h('span.alertify-tabs-title'+ (tab.disabled ? '.disabled' : ''), h('span.tab-title-text',{id: 'cp-tab-' + tab.title.toLowerCase(), 'aria-hidden':"true"}, tab.title));
+            $(title).attr('tabindex', '0');
             if (tab.icon) {
-                var icon = h('i', {class: tab.icon, 'aria-labelledby': 'cp-tab-' + tab.title.toLowerCase()});
+                var icon = Icons.get(tab.icon, {'aria-labelledby': 'cp-tab-' + tab.title.toLowerCase()});
                 $(title).prepend(' ').prepend(icon);
             }
-            $(title).click(function () {
+
+            Util.onClickEnter($(title), function (event) {
+                event.preventDefault();
+                event.stopPropagation();
                 if (tab.disabled) { return; }
                 var old = tabs[active];
                 if (old.onHide) { old.onHide(); }
@@ -267,7 +283,7 @@ define([
         ]);
     };
 
-    UI.tokenField = function (target, autocomplete) {
+    UI.tokenField = function (target, autocomplete, close = null) {
         var t = {
             element: target || h('input'),
         };
@@ -296,14 +312,17 @@ define([
         var $root = $t.parent();
 
         var $input = $root.find('.token-input');
+        $input.attr('tabindex', 0);
+
         var $button = $(h('button.btn.btn-primary', [
-            h('i.fa.fa-plus'),
+            Icons.get('add'),
             h('span', Messages.tag_add)
         ]));
 
 
-        $button.click(function () {
+        Util.onClickEnter($button, function (e) {
             $t.tokenfield('createToken', $input.val());
+            e.stopPropagation();
         });
 
         var $container = $(h('span.cp-tokenfield-container'));
@@ -321,27 +340,50 @@ define([
                 if (!$tokens.length) {
                     $container.prepend(h('span.tokenfield-empty', Messages.kanban_noTags));
                 }
+                $tokens.find('.close').attr('tabindex', 0).empty().append(Icons.get('delete-token')).on('keydown', e => {
+                    e.stopPropagation();
+                });
+                $tokens.find('.token-label').attr('tabindex', 0).on('keydown', function (e) {
+                    if (e.which === 13 || e.which === 32) {
+                        $(this).dblclick();
+                    }
+                    e.stopPropagation();
+                });
                 $form.append($input);
                 $form.append($button);
+                if (close) {
+                    $form.append(close);
+                }
                 if (isEdit) { $button.find('span').text(Messages.tag_edit); }
                 else { $button.find('span').text(Messages.add); }
                 $container.append($form);
-                $input.focus();
                 isEdit = false;
                 called = false;
             });
         };
         resetUI();
 
+        const focusInput = () => {
+            let active = document.activeElement;
+            if ($.contains($container[0], active)) {
+                setTimeout(() => {
+                    $input.focus();
+                });
+            }
+        };
+
         $t.on('tokenfield:removedtoken', function () {
             resetUI();
+            focusInput();
         });
         $t.on('tokenfield:editedtoken', function () {
             resetUI();
+            focusInput();
         });
         $t.on('tokenfield:createdtoken', function () {
             $input.val('');
             resetUI();
+            focusInput();
         });
         $t.on('tokenfield:edittoken', function () {
             isEdit = true;
@@ -482,8 +524,8 @@ define([
         var navs = [];
         buttons.forEach(function (b) {
             if (!b.name || !b.onClick) { return; }
-            var button = h('button', { tabindex: '1', 'class': b.className || '' }, [
-                b.iconClass ? h('i' + b.iconClass) : undefined,
+            var button = h('button', { 'class': b.className || '' }, [
+                b.iconClass ? Icons.get(b.iconClass): undefined,
                 b.name
             ]);
             button.classList.add('btn');
@@ -505,7 +547,8 @@ define([
                     divClasses: 'left'
                 }, todo);
             } else {
-                $(button).click(function () {
+                Util.onClickEnter($(button), function (e) {
+                    e.stopPropagation();
                     todo();
                 });
             }
@@ -514,6 +557,7 @@ define([
         });
         return dialog.nav(navs);
     };
+
     dialog.customModal = function (msg, opt) {
         var force = false;
         if (typeof(opt) === 'object') {
@@ -535,13 +579,48 @@ define([
             message = dialog.message(msg);
         }
 
-        var frame = h('div', [
+        var cls = opt.scrollable ? '.cp-alertify-scrollable' : '';
+        var frame = h('div'+cls, [
             message,
             dialog.getButtons(opt.buttons, opt.onClose)
         ]);
-
         if (opt.forefront) { $(frame).addClass('forefront'); }
         return frame;
+    };
+
+    let addTabListener = UI.addTabListener = frame => {
+        $(frame).attr('role', 'dialog').attr('aria-modal', 'true');
+        // find focusable elements
+        let modalElements = $(frame).find('a, button, input, [tabindex]:not([tabindex="-1"]), textarea').filter(':visible').filter(':not(:disabled)');
+
+        if (modalElements.length === 0) {
+            // there are no focusable elements -> nothing to do for us here
+            return;
+        }
+
+        // intialize with focus on first element
+        modalElements[0].focus();
+
+        $(frame).on('keydown', function (e) {
+            modalElements = $(frame).find('a, button, input, [tabindex]:not([tabindex="-1"]), textarea').filter(':visible').filter(':not(:disabled)'); // for modals with dynamic content
+
+            if (e.which === 9) { // Tab
+                if (e.shiftKey) {
+                    // On the first element, shift+tab goes to last
+                    if (document.activeElement === modalElements[0]) {
+                        e.preventDefault();
+                        modalElements[modalElements.length - 1].focus();
+                    }
+                } else {
+                    // On the last element, tab goes to first
+                    if (document.activeElement === modalElements[modalElements.length - 1]) {
+                        e.preventDefault();
+                        modalElements[0].focus();
+                    }
+                }
+            }
+        });
+
     };
     UI.openCustomModal = function (content, opt) {
         var frame = dialog.frame([
@@ -559,6 +638,8 @@ define([
         setTimeout(function () {
             Notifier.notify();
         });
+
+        addTabListener(frame);
         return frame;
     };
 
@@ -584,9 +665,12 @@ define([
         };
         $blockContainer.html('').appendTo($body);
         var $block = $(h('div.cp-modal')).appendTo($blockContainer);
-        $(h('span.cp-modal-close.fa.fa-times', {
-            title: Messages.filePicker_close
-        })).click(hide).appendTo($block);
+        $(h('span',[
+            Icons.get('close', {
+                'class': 'cp-modal-close',
+                'title': Messages.filePicker_close
+            }),
+        ])).click(hide).appendTo($block);
         $body.click(hide);
         $block.click(function (e) {
             e.stopPropagation();
@@ -596,10 +680,12 @@ define([
                 hide();
             }
         });
+
         return {
             $modal: $blockContainer,
             show: function () {
                 $blockContainer.css('display', 'flex');
+                addTabListener($blockContainer);
             },
             hide: hide
         };
@@ -649,12 +735,43 @@ define([
             Notifier.notify();
         });
 
+        addTabListener(frame);
         return {
             element: frame,
             delete: close
         };
     };
 
+    UI.alertPromise = function (msg, opt) {
+        return new Promise((resolve) => {
+            UI.alert(msg, resolve, opt);
+        });
+    };
+
+    /**
+     * @callback promptCallback
+     * @param {string} value - the value the user chose
+     */
+
+    /**
+     * Optional parameters for UI.prompt()
+     * @typedef {Object} PromptParams
+     * @property {boolean} [password] - if true: ask the user for a password
+     * @property {Element} [typeInput] - if set: add a dropdown next to the text input field (create it with UIElements.createDropdown())
+     * @property {Object} [inputOpts] - parameters for dialog.textInput()
+     * @property {string} [ok] - caption for the OK button
+     * @property {string} [cancel] - caption for the cancel button
+     */
+
+    /**
+     * Show a popup to ask something.
+     *
+     * @param {(string|Element)} [msg] - Message/title to show
+     * @param {string} [def] - the default value
+     * @param {promptCallback} [cb] - called when the used selected a value
+     * @param {PromptParams} [opt] - optional settings for the prompt
+     * @param {boolean} [force] - if true: do not HTML escape msg
+     */
     UI.prompt = function (msg, def, cb, opt, force) {
         cb = cb || function () {};
         opt = opt || {};
@@ -700,7 +817,7 @@ define([
 
         document.body.appendChild(frame);
         setTimeout(function () {
-            $(input).select().focus();
+            addTabListener(frame);
             Notifier.notify();
         });
     };
@@ -708,7 +825,6 @@ define([
     UI.confirm = function (msg, cb, opt, force) {
         cb = cb || function () {};
         opt = opt || {};
-
         var message;
         if (typeof(msg) === 'string') {
             if (!force) { msg = Util.fixHTML(msg); }
@@ -737,13 +853,19 @@ define([
         var $ok = $(ok).click(function (ev) { close(true, ev); });
         var $cancel = $(cancel).click(function (ev) { close(false, ev); });
 
+        document.body.appendChild(frame);
+
+        addTabListener(frame);
         listener = listenForKeys(function () {
+            // Only trigger OK if cancel is not focused
+            if (document.activeElement === $cancel[0]) {
+                return void $cancel.click();
+            }
             $ok.click();
         }, function () {
             $cancel.click();
         }, frame);
 
-        document.body.appendChild(frame);
         setTimeout(function () {
             Notifier.notify();
             $(frame).find('.ok').focus();
@@ -810,14 +932,18 @@ define([
         };
 
         var newCls2 = config.new ? 'new' : '';
-        $(originalBtn).addClass('cp-button-confirm-placeholder').addClass(newCls2).click(function (e) {
-            e.stopPropagation();
-            // If we have a validation function, continue only if it's true
-            if (config.validate && !config.validate()) { return; }
-            i = 1;
-            to = setTimeout(todo, INTERVAL);
-            $(originalBtn).hide().after(content);
+        $(originalBtn).addClass('cp-button-confirm-placeholder').addClass(newCls2).on('click keydown', function (e) {
+            if (e.type === 'click' || (e.type === 'keydown' && e.key === 'Enter')) {
+                e.stopPropagation();
+                // If we have a validation function, continue only if it's true
+                if (config.validate && !config.validate()) { return; }
+                i = 1;
+                to = setTimeout(todo, INTERVAL);
+                $(originalBtn).hide().after(content);
+                $(button).focus();
+            }
         });
+
 
         return {
             reset: function () {
@@ -872,11 +998,21 @@ define([
         opts = opts || {};
         var attributes = merge({
             type: 'password',
-            autocomplete: 'new-password', // https://developer.mozilla.org/en-US/docs/Web/HTML/Attributes/autocomplete#values
+            tabindex: '0',
+            autocomplete: 'one-time-code', // https://developer.mozilla.org/en-US/docs/Web/HTML/Attributes/autocomplete#values
         }, opts);
 
         var input = h('input.cp-password-input', attributes);
-        var eye = h('span.fa.fa-eye.cp-password-reveal');
+        let passwordReveal = Icons.get('password-reveal');
+        let passwordHide = Icons.get('password-hide');
+        var eye = h('span.cp-password-reveal', {
+            tabindex: 0,
+            role: 'button',
+            'aria-label': Messages.show_password,
+            'aria-pressed': 'false'
+        },[
+            passwordReveal
+        ]);
 
         var $eye = $(eye);
         var $input = $(input);
@@ -893,16 +1029,17 @@ define([
                 $input.focus();
             });
         } else {
-            $eye.click(function () {
-                if ($eye.hasClass('fa-eye')) {
-                    $input.prop('type', 'text');
-                    $input.focus();
-                    $eye.removeClass('fa-eye').addClass('fa-eye-slash');
-                    return;
+            Util.onClickEnter($eye, function (e) {
+                e.stopPropagation();
+                if ($input.prop('type') === 'password') {
+                    $input.prop('type', 'text').focus();
+                    $eye.empty().append(passwordHide);
+                    $eye.attr('aria-label', Messages.hide_password).attr('aria-pressed', 'true');
+                } else {
+                    $input.prop('type', 'password').focus();
+                    $eye.empty().append(passwordReveal);
+                    $eye.attr('aria-label', Messages.show_password).attr('aria-pressed', 'false');
                 }
-                $input.prop('type', 'password');
-                $input.focus();
-                $eye.removeClass('fa-eye-slash').addClass('fa-eye');
             });
         }
 
@@ -913,40 +1050,16 @@ define([
     };
 
     UI.createHelper = function (href, text) {
-        var q = h('a.fa.fa-question-circle', {
+        var q = h('a', {
             'data-cptippy-html': true,
             style: 'text-decoration: none !important;',
             title: text,
             href: href,
             target: "_blank",
-            'data-tippy-placement': "right"
-        });
+            'data-tippy-placement': "right",
+            'aria-label': text
+        }, Icons.get('circle-question'));
         return q;
-    };
-
-    /*
-     *  spinner
-     */
-    UI.spinner = function (parent) {
-        var $target = $('<span>', {
-            'class': 'fa fa-circle-o-notch fa-spin fa-4x fa-fw',
-        }).hide();
-
-        $(parent).append($target);
-
-        return {
-            show: function () {
-                $target.css('display', 'inline');
-                return this;
-            },
-            hide: function () {
-                $target.hide();
-                return this;
-            },
-            get: function () {
-                return $target;
-            },
-        };
     };
 
     var LOADING = 'cp-loading';
@@ -958,8 +1071,10 @@ define([
             var $loading = $('#' + LOADING);
             // Show the loading screen
             $loading.css('display', '');
+            $loading.toggleClass('cp-loading-empty', false);
             $loading.removeClass('cp-loading-hidden');
             $loading.removeClass('cp-loading-transparent');
+            $loading.attr('aria-live','polite');
             if (config.newProgress) {
                 var progress = h('div.cp-loading-progress', [
                     h('p.cp-loading-progress-list'),
@@ -972,10 +1087,12 @@ define([
                 $('.cp-loading-spinner-container').show();
             }
             // Add loading text
+            const $message = $('#' + LOADING).find('#cp-loading-message');
+            const $spinnerMessage = $('#' + LOADING).find('#cp-loading-spinner-message').hide();
+            $message.removeClass('cp-error-message cp-error-message-alt');
+            $message.hide().text('');
             if (loadingText) {
-                $('#' + LOADING).find('#cp-loading-message').show().text(loadingText);
-            } else {
-                $('#' + LOADING).find('#cp-loading-message').hide().text('');
+                $spinnerMessage.show().text(loadingText);
             }
         };
         if ($('#' + LOADING).length) {
@@ -985,6 +1102,7 @@ define([
             todo();
         }
 
+        $('html').toggleClass('cp-loading-noscroll', true);
         // Remove the inner placeholder (iframe)
         $('#placeholder').remove();
     };
@@ -1004,17 +1122,24 @@ define([
         $loading.find('.cp-loading-progress').remove(); // Remove the progress list
         setTimeout(cb, 750);
         $('head > link[href^="/customize/src/pre-loading.css"]').remove();
+        $('html').toggleClass('cp-loading-noscroll', false);
     };
-    UI.errorLoadingScreen = function (error, transparent, exitable) {
+    UI.emptyLoadingScreen = function (content) {
+        UI.addLoadingScreen();
+        var $loading = $('#' + LOADING);
+        $loading.toggleClass('cp-loading-empty', true);
+        $loading.find('.cp-loading-container').hide();
+        $loading.find('.cp-loading-logo').hide();
+        $loading.append(h('div.cp-loading-empty', [content]));
+    };
+    UI.errorLoadingScreen = function (error, transparent, exitable, errorCls) {
         if (error === 'Error: XDR encoding failure') {
             console.warn(error);
             return;
         }
 
         var $loading = $('#' + LOADING);
-        if (!$loading.is(':visible') || $loading.hasClass('cp-loading-hidden')) {
-            UI.addLoadingScreen();
-        }
+        UI.addLoadingScreen();
         // Remove the progress list
         $loading.find('.cp-loading-progress').remove();
         // Hide the spinner
@@ -1027,7 +1152,14 @@ define([
         if (error instanceof Element) {
             $error.html('').append(error);
         } else {
+            errorCls = true;
             $error.html(error || Messages.error);
+        }
+
+        if (errorCls) {
+            const cls = transparent ? 'cp-error-message-alt'
+                                    : 'cp-error-message';
+            $error.addClass(cls);
         }
         $error.find('a[href]').click(function (e) {
             e.preventDefault();
@@ -1040,31 +1172,49 @@ define([
             window.parent.location = href;
         });
         if (exitable) {
+            // if true or function, ALSO add a button to leave
             $(window).focus();
-            $(window).keydown(function (e) { // XXX what if they don't have a keyboard?
+            $(window).keydown(function (e) { // what if they don't have a keyboard?
                 if (e.which === 27) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    // Function: call the function (should be a redirect)
+                    if (typeof(exitable) === "function") { return void exitable(); }
+                    // Otherwise remove the loading screen
                     $loading.hide();
-                    if (typeof(exitable) === "function") { exitable(); }
+                    $('html').toggleClass('cp-loading-noscroll', false);
                 }
             });
         }
     };
 
-    var $defaultIcon = $('<span>', {"class": "fa fa-file-text-o"});
-    UI.getIcon = function (type) {
-        var $icon = $defaultIcon.clone();
+    UI.getNewIcon = function (type) {
+        var icon = Icons.get('file');
 
         if (AppConfig.applicationsIcon && AppConfig.applicationsIcon[type]) {
-            var icon = AppConfig.applicationsIcon[type];
-            var font = icon.indexOf('cptools') === 0 ? 'cptools' : 'fa';
+            icon = AppConfig.applicationsIcon[type];
             if (type === 'fileupload') { type = 'file'; }
             if (type === 'folderupload') { type = 'file'; }
             if (type === 'link') { type = 'drive'; }
             var appClass = ' cp-icon cp-icon-color-'+type;
-            $icon = $('<span>', {'class': font + ' ' + icon + appClass});
+            icon = Icons.get(icon, {'class': appClass});
         }
 
-        return $icon;
+        return icon;
+    };
+    UI.getIcon = function (type) {
+        let icon = Icons.get('file');
+
+        if (AppConfig.applicationsIcon && AppConfig.applicationsIcon[type]) {
+            let appIcon = AppConfig.applicationsIcon[type];
+            if (type === 'fileupload') { type = 'file'; }
+            if (type === 'folderupload') { type = 'file'; }
+            if (type === 'link') { type = 'drive'; }
+            const appClass = ' cp-icon cp-icon-color-'+type;
+            icon = Icons.get(appIcon, {'class': appClass});
+        }
+
+        return icon;
     };
     UI.getFileIcon = function (data) {
         var $icon = UI.getIcon();
@@ -1098,6 +1248,10 @@ define([
         });
     };
 
+    UI.clearTooltipsDelay = function () {
+        setTimeout(UI.clearTooltips, 500);
+    };
+
     var delay = typeof(AppConfig.tooltipDelay) === "number" ? AppConfig.tooltipDelay : 500;
     $.extend(true, Tippy.defaults, {
         placement: 'bottom',
@@ -1108,6 +1262,10 @@ define([
         arrow: true,
         maxWidth: '200px',
         flip: true,
+        onShow: () => {
+            // Hide other tooltips
+            $('body').find('.tippy-popper').hide();
+        },
         popperOptions: {
             modifiers: {
                 preventOverflow: { boundariesElement: 'window' }
@@ -1123,6 +1281,7 @@ define([
         var addTippy = function (i, el) {
             if (el._tippy) { return; }
             if (!el.getAttribute('title')) { return; }
+            if (el.getAttribute('data-notippy')) { return; }
             if (el.nodeName === 'IFRAME') { return; }
             var opts = {
                 distance: 15
@@ -1187,18 +1346,18 @@ define([
         if (labelOpts.class) { labelOpts.class += ' cp-checkmark'; }
 
         // Mark properties
-        var markOpts = { tabindex: 0 };
+        var markOpts = { tabindex: 0, role: 'checkbox', 'aria-checked': checked, 'aria-labelledby': inputOpts.id + '-label' };
         $.extend(markOpts, opts.mark || {});
 
         var input = h('input', inputOpts);
         var $input = $(input);
         var mark = h('span.cp-checkmark-mark', markOpts);
         var $mark = $(mark);
-        var label = h('span.cp-checkmark-label', labelTxt);
+        var label = h('span.cp-checkmark-label', {id: inputOpts.id + '-label'}, labelTxt);
 
         $mark.keydown(function (e) {
             if ($input.is(':disabled')) { return; }
-            if (e.which === 32) {
+            if (e.which === 32 || e.which === 13){
                 e.stopPropagation();
                 e.preventDefault();
                 $input.prop('checked', !$input.is(':checked'));
@@ -1207,6 +1366,7 @@ define([
         });
 
         $input.change(function () {
+            $mark.attr('aria-checked', $input.is(':checked'));
             if (!opts.labelAlt) { return; }
             if ($input.is(':checked') !== checked) {
                 $(label).text(opts.labelAlt);
@@ -1234,22 +1394,30 @@ define([
         $.extend(inputOpts, opts.input || {});
 
         // Label properties
-        var labelOpts = {};
+        var labelOpts = {
+            for: id
+        };
         $.extend(labelOpts, opts.label || {});
         if (labelOpts.class) { labelOpts.class += ' cp-checkmark'; }
 
+        var labelId = id + '-label';
         // Mark properties
-        var markOpts = { tabindex: 0 };
+        var markOpts = {
+            tabindex: 0,
+            role: 'radio',
+            'aria-checked': checked ? 'true' : 'false',
+            'aria-labelledby': labelId
+        };
         $.extend(markOpts, opts.mark || {});
 
         var input = h('input', inputOpts);
         var $input = $(input);
         var mark = h('span.cp-radio-mark', markOpts);
-        var label = h('span.cp-checkmark-label', labelTxt);
+        var label = h('span.cp-checkmark-label', {id: labelId}, labelTxt);
 
         $(mark).keydown(function (e) {
             if ($input.is(':disabled')) { return; }
-            if (e.which === 32) {
+            if (e.which === 13 || e.which === 32) {
                 e.stopPropagation();
                 e.preventDefault();
                 if ($input.is(':checked')) { return; }
@@ -1258,7 +1426,14 @@ define([
             }
         });
 
-        $input.change(function () { $(mark).focus(); });
+        $input.change(function () {
+            $(mark).attr('aria-checked', $input.is(':checked') ? 'true' : 'false');
+            $('input[name="' + name + '"]').not($input).each(function() {
+                var otherRadio = $(this).closest('.cp-radio').find('.cp-radio-mark');
+                otherRadio.attr('aria-checked', false);
+            });
+            $(mark).focus();
+        });
 
         var radio =  h('label', labelOpts, [
             input,
@@ -1279,7 +1454,7 @@ define([
         opts = opts || {};
 
         var dontShowAgain = h('div.cp-corner-dontshow', [
-            h('span.fa.fa-times'),
+            Icons.get('close'),
             Messages.dontShowAgain
         ]);
 
@@ -1347,10 +1522,9 @@ define([
             delete: deletePopup
         };
     };
-
     UI.makeSpinner = function ($container) {
-        var $ok = $('<span>', {'class': 'fa fa-check', title: Messages.saved}).hide();
-        var $spinner = $('<span>', {'class': 'fa fa-spinner fa-pulse'}).hide();
+        var $okWrap = $('<span>', {class: "cp-ok"}).hide().append(Icons.get('check', { title: Messages.saved }));
+        var $spinWrap = $('<span>', {class: "cp-spinner"}).hide().append(Icons.get('loading'));
 
         var state = false;
         var to;
@@ -1358,34 +1532,34 @@ define([
         var spin = function () {
             clearTimeout(to);
             state = true;
-            $ok.hide();
-            $spinner.show();
+            $okWrap.hide();
+            $spinWrap.show();
         };
         var hide = function () {
             clearTimeout(to);
             state = false;
-            $ok.hide();
-            $spinner.hide();
+            $okWrap.hide();
+            $spinWrap.hide();
         };
         var done = function () {
             clearTimeout(to);
             state = false;
-            $ok.show();
-            $spinner.hide();
+            $okWrap.show();
+            $spinWrap.hide();
             to = setTimeout(function () {
-                $ok.hide();
+                $okWrap.hide();
             }, 500);
         };
 
         if ($container && $container.append) {
-            $container.append($ok);
-            $container.append($spinner);
+            $container.append($okWrap);
+            $container.append($spinWrap);
         }
 
         return {
             getState: function () { return state; },
-            ok: $ok[0],
-            spinner: $spinner[0],
+            ok: $okWrap[0],
+            spinner: $spinWrap[0],
             spin: spin,
             hide: hide,
             done: done
@@ -1452,42 +1626,115 @@ define([
         };
     };
 
-    /*  Given two jquery objects (a 'button' and a 'drawer')
-        add handlers to make it such that clicking the button
-        displays the drawer contents, and blurring the button
-        hides the drawer content. Used for toolbar buttons at the moment.
-    */
-    UI.createDrawer = function ($button, $content) {
-        $button.click(function () {
-            var topPos = $button[0].getBoundingClientRect().bottom;
-            $content.toggle();
-            $button.removeClass('cp-toolbar-button-active');
-            if ($content.is(':visible')) {
-                $button.addClass('cp-toolbar-button-active');
-                $content.focus();
-                var wh = $(window).height();
-                $content.css('max-height', Math.floor(wh - topPos - 1)+'px');
-            }
+    UI.getPreCopy = (content) => {
+        let copy = h('div.cp-pre-copy-button', [
+            Icons.get('copy')
+        ]);
+        Util.onClickEnter($(copy), () => {
+            Clipboard.copy(content, (err) => {
+                if (err) { return UI.warn(Messages.error); }
+                UI.log(Messages.genericCopySuccess);
+            });
         });
-        var onBlur = function (e) {
-            if (e.relatedTarget) {
-                var $relatedTarget = $(e.relatedTarget);
+        return h('div.cp-pre-copy-container', [
+            copy,
+            h('pre.cp-pre-copy', content)
+        ]);
+    };
 
-                if ($relatedTarget.is('.cp-toolbar-drawer-button')) { return; }
-                if ($relatedTarget.parents('.cp-toolbar-drawer-content').length) {
-                    $relatedTarget.blur(onBlur);
-                    return;
-                }
-            }
-            $button.removeClass('cp-toolbar-button-active');
-            $content.hide();
-        };
-        $content.blur(onBlur).appendTo($button);
-        $('body').keydown(function (e) {
-            if (e.which === 27) {
-                $content.blur();
-            }
+/*  QR code generation is synchronous once the library is loaded
+    so this could be syncronous if we load the library separately. */
+    UI.createQRCode = function (data, _cb) {
+        var cb = Util.once(Util.mkAsync(_cb || Util.noop));
+        require(['/lib/qrcode.min.js'], function () {
+            var div = h('div');
+            /*var code =*/ new window.QRCode(div, data);
+            cb(void 0, div);
+        }, function (err) {
+            cb(err);
         });
+    };
+
+
+    UI.getOTPScreen = function (cb, exitable, err) {
+        var btn, input;
+        var error;
+        if (err) {
+            error = h('p.cp-password-error', Messages.settings_otp_invalid);
+        }
+        var block = h('div#cp-loading-password-prompt', [
+            error,
+            h('p.cp-password-info', Messages.loading_enter_otp),
+            h('p.cp-password-form', [
+                input = h('input', {
+                    placeholder: Messages.settings_otp_code,
+                    autocomplete: 'off',
+                    autocorrect: 'off',
+                    autocapitalize: 'off',
+                    spellcheck: false,
+                }),
+                btn = h('button.btn.btn-primary', Messages.ui_confirm)
+            ]),
+            UI.setHTML(h('p.cp-password-recovery'), Messages.loading_recover)
+        ]);
+        var $input = $(input);
+        var $btn = $(btn).click(function () {
+            var val = $input.val();
+            if (!val) { return void UI.getOTPScreen(cb, exitable, 'INVALID_CODE'); }
+            cb(val);
+        });
+        $(input).on('keydown', function (e) {
+            if (e.which !== 13) { return; } // enter
+            $btn.click();
+        });
+        UI.errorLoadingScreen(block, false, exitable);
+        // set the user's cursor in the OTP input field
+        $(block).find('.cp-password-form input').focus();
+
+    };
+
+    UI.getDestroyedPlaceholderMessage = (code, isAccount, isTemplate) => {
+        var account = {
+            ARCHIVE_OWNED: Messages.dph_account_destroyed,
+            INACTIVE: Messages.dph_account_inactive,
+            MODERATION_ACCOUNT: Messages.dph_account_moderated,
+            MODERATION_BLOCK: Messages.dph_account_moderated,
+            PASSWORD_CHANGE: Messages.dph_account_pw,
+        };
+        var template = {
+            ARCHIVE_OWNED: Messages.dph_tmp_destroyed,
+            MODERATION_PAD: Messages.dph_tmp_moderated,
+            MODERATION_ACCOUNT: Messages.dph_tmp_moderated_account,
+            PASSWORD_CHANGE: Messages.dph_tmp_pw
+        };
+        var pad = {
+            ARCHIVE_OWNED: Messages.dph_pad_destroyed,
+            INACTIVE: Messages.dph_pad_inactive,
+            MODERATION_PAD: Messages.dph_pad_moderated,
+            MODERATION_DESTROY: Messages.dph_pad_moderated,
+            MODERATION_ACCOUNT: Messages.dph_pad_moderated_account,
+            PASSWORD_CHANGE: Messages.dph_pad_pw
+        };
+        var msg = pad[code];
+        if (isAccount) {
+            msg = account[code];
+        } else if (isTemplate) {
+            msg = template[code];
+        }
+        if (!msg) { msg = Messages.dph_default; }
+        return msg;
+    };
+    UI.getDestroyedPlaceholder = function (reason, isAccount) {
+        if (typeof(reason) !== "string") { return; }
+        var split = reason.split(':');
+        var code = split[0]; // Generated code
+        var input = split[1]; // User/admin manual input
+        var text = UI.getDestroyedPlaceholderMessage(code, isAccount);
+        var reasonBlock = input ? h('p', Messages._getKey('dph_reason', [input])) : undefined;
+        return h('div.cp-loading-error', [
+            h('p', text),
+            reasonBlock
+        ]);
     };
 
     return UI;

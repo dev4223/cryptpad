@@ -1,3 +1,9 @@
+/*
+ * SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
 @import (reference) "./colortheme-all.less";
 @import (reference) "./variables.less";
 @import (reference) "./browser.less";
@@ -31,6 +37,44 @@
                 .cp-radio {
                     margin: 0 0 5px 0;
                 }
+            }
+        }
+    }
+
+    .cp-loading-missing-mfa {
+        .cp-settings-qr-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-evenly;
+            .cp-settings-qr-code {
+                input {
+                    max-width: 250px;
+                }
+                button {
+                    margin-top: 10px;
+                }
+            }
+        }
+        .cp-settings-qr {
+            img {
+                border: 10px solid white;
+                border-radius: 10px;
+            }
+            margin: 10px 10px 10px 0;
+        }
+        .cp-password-container {
+            flex-wrap: wrap;
+            gap: 0.5rem;
+
+            justify-content: flex-start;
+            input {
+                flex-shrink: 1;
+                max-width: 400px;
+            }
+            label {
+                width: 100%;
+                font-weight: unset;
+                margin-bottom: 5px;
             }
         }
     }
@@ -85,16 +129,16 @@
 
     // Access modal
     button.cp-access-add {
-        i {
+        svg {
             margin-right: 0px !important;
         }
-        i.fa-arrow-left {
+        svg[data-lucide='arrow-left'] {
             display: inline;
             @media (max-width: @browser_media-medium-screen) {
                 display: none;
             }
         }
-        i.fa-arrow-up {
+        svg[data-lucide='arrow-up'] {
             display: none;
             @media (max-width: @browser_media-medium-screen) {
                 display: inline;
@@ -117,24 +161,37 @@
     .cp-access-margin-right {
         margin-right: 5px !important;
     }
+    .cp-share-columns {
+        .cp-checkmark {
+            svg.lucide {
+                margin-left: 0;
+                margin-right: 0.2rem;
+            }
+        }
+    }
 
     // teams invite modal
     .cp-teams-invite-block {
         display: flex;
         align-items: center;
         margin-bottom: 5px;
+        &.cp-teams-invite-role {
+            .cp-radio:not(:first-child) {
+                margin-left: 10px;
+            }
+        }
+        .cp-teams-help {
+            text-decoration: none !important;
+        }
     }
     .cp-teams-invite-message {
         resize: none;
     }
     .cp-teams-invite-alert {
-        margin-top: 10px;
+        margin: 10px 0px 0px 0px !important;
     }
     .cp-teams-invite-spinner {
         font-size: 1.2em;
-        .fa {
-            margin-right: 10px;;
-        }
     }
     .cp-teams-help {
         margin-left: 10px;
@@ -157,6 +214,14 @@
         .cp-snapshot-spinner {
             min-height: 90px;
             text-align: center;
+            .cp-spinner {
+                svg {
+                    width: 4rem;
+                    height: 4rem;
+                    vertical-align: middle;
+                    animation: spin 10s linear infinite;
+                }
+            }
         }
         .cp-snapshot-element {
             display: flex;
@@ -164,7 +229,7 @@
             padding: 5px 0;
             outline: none;
             border-radius: @variables_radius;
-            & > i {
+            & > svg {
                 margin-left: @snapshot_spacing;
                 text-align: center;
             }
@@ -258,17 +323,13 @@
                         color: @cp_markdown-block-fg;
                     }
                 }
-                .cp-spinner {
+                .cp-spinner-main {
                     border-color: @cryptpad_color_brand;
                     border-top-color: transparent;
                 }
             }
             .cp-mediatag-control {
                 align-self: center;
-                .fa {
-                    margin: 10px;
-                    cursor: pointer;
-                }
             }
             .cp-mediatag-outer {
                 display: flex;
@@ -303,4 +364,26 @@
             color: @cp_form-invalid;
         }
     }
+
+    .alertify .dialog .msg div.cp-admin-message {
+        color: @cryptpad_text_col;
+        a {
+            color: @cryptpad_color_link;
+        }
+    }
+
+    .cp-userteam-picker {
+        .cp-userteam-filter {
+            margin: 5px 0;
+            input {
+                margin-bottom: 0 !important;
+            }
+        }
+        .cp-usergrid-container {
+            label {
+                margin-bottom: 0;
+            }
+        }
+    }
+
 }

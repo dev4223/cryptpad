@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 define([
     'jquery',
     '/api/config',
@@ -5,23 +9,26 @@ define([
     '/common/hyperscript.js',
     '/customize/messages.js',
     '/common/dom-ready.js',
-    '/bower_components/nthen/index.js',
+    '/components/nthen/index.js',
     '/common/sframe-common-outer.js',
     '/customize/login.js',
     '/common/common-hash.js',
     '/common/common-util.js',
     '/common/pinpad.js',
-    '/common/outer/network-config.js',
+    '/common/network-config.js',
+    '/common/outer/login-block.js',
     '/customize/pages.js',
     '/checkup/checkup-tools.js',
     '/customize/application_config.js',
+    '/common/onlyoffice/current-version.js',
+    '/common/common-icons.js',
 
-    '/bower_components/tweetnacl/nacl-fast.min.js',
-    'css!/bower_components/components-font-awesome/css/font-awesome.min.css',
+    '/components/tweetnacl/nacl-fast.min.js',
     'less!/checkup/app-checkup.less',
 ], function ($, ApiConfig, Assertions, h, Messages, DomReady,
             nThen, SFCommonO, Login, Hash, Util, Pinpad,
-            NetConfig, Pages, Tools, AppConfig) {
+            NetConfig, Block, Pages, Tools, AppConfig,
+            OOCurrentVersion, Icons) {
     window.CHECKUP_MAIN_LOADED = true;
 
     var Assert = Assertions();
@@ -75,7 +82,7 @@ define([
     var trimmedSafe = trimSlashes(ApiConfig.httpSafeOrigin);
     var trimmedUnsafe = trimSlashes(ApiConfig.httpUnsafeOrigin);
     var fileHost = ApiConfig.fileHost;
-    var accounts_api = ApiConfig.accounts_api || AppConfig.accounts_api || undefined;
+    var accounts_api = ApiConfig.accounts_api || undefined;
 
     var getAPIPlaceholderPath = function (relative) {
         var absolute;
@@ -97,13 +104,13 @@ define([
         console.error(err);
     }
 
-    var ACCOUNTS_URL;
-    try {
-        if (typeof(AppConfig.upgradeURL) === 'string') {
-            ACCOUNTS_URL = new URL(AppConfig.upgradeURL, trimmedUnsafe).origin;
-        }
-    } catch (err) {
-        console.error(err);
+    var HTTP_API_URL;
+    if (API_URL) {
+        try {
+            var httpApi = new URL(API_URL);
+            httpApi.protocol = API_URL.protocol === 'wss:' ? 'https:' : 'http:';
+            HTTP_API_URL = httpApi.origin;
+        } catch (e) {}
     }
 
     var debugOrigins = {
@@ -306,12 +313,11 @@ define([
 
         var opt = Login.allocateBytes(bytes);
 
+        var blockKeys = opt.blockKeys;
         var blockUrl = Login.Block.getBlockUrl(opt.blockKeys);
-        var blockRequest = Login.Block.serialize("{}", opt.blockKeys);
-        var removeRequest = Login.Block.remove(opt.blockKeys);
         console.warn('Testing block URL (%s). One 404 is normal.', blockUrl);
 
-        var userHash = '/2/drive/edit/000000000000000000000000';
+        var userHash = Hash.createRandomHash('drive');
         var secret = Hash.getSecrets('drive', userHash);
         opt.keys = secret.keys;
         opt.channelHex = secret.channel;
@@ -319,7 +325,7 @@ define([
         var RT, rpc, exists, restricted;
 
         nThen(function (waitFor) {
-            Util.fetch(blockUrl, waitFor(function (err) {
+            Util.getBlock(blockUrl, {}, waitFor(function (err) {
                 if (err) { return; } // No block found
                 exists = true;
             }));
@@ -345,24 +351,17 @@ define([
                 rt.realtime.onSettle(waitFor());
             }));
         }).nThen(function (waitFor) {
-            // Init RPC
-            Pinpad.create(RT.network, RT.proxy, waitFor(function (e, _rpc) {
-                if (e) {
-                    waitFor.abort();
-                    console.error("Can't initialize RPC", e); // INVALID_KEYS
-                    return void cb(false);
-                }
-                rpc = _rpc;
-            }));
-        }).nThen(function (waitFor) {
             // Write block
             if (exists) { return; }
-            rpc.writeLoginBlock(blockRequest, waitFor(function (e) {
+            Block.writeLoginBlock({
+                blockKeys: blockKeys,
+                content: {}
+            }, waitFor(function (e, obj) {
                 // we should tolerate restricted registration
                 // and proceed to clean up after any data we've created
-                if (e === 'E_RESTRICTED') {
+                if (e && obj && obj.errorCode === 'E_RESTRICTED') {
                     restricted = true;
-                    return void cb(true);
+                    return;
                 }
                 if (e) {
                     waitFor.abort();
@@ -373,7 +372,7 @@ define([
         }).nThen(function (waitFor) {
             if (restricted) { return; }
             // Read block
-            Util.fetch(blockUrl, waitFor(function (e) {
+            Util.getBlock(blockUrl, {}, waitFor(function (e) {
                 if (e) {
                     waitFor.abort();
                     console.error("Can't read login block", e);
@@ -382,14 +381,25 @@ define([
             }));
         }).nThen(function (waitFor) {
             // Remove block
-            rpc.removeLoginBlock(removeRequest, waitFor(function (e) {
+            Block.removeLoginBlock({
+                blockKeys: blockKeys,
+            }, waitFor(function (e) {
                 if (restricted) { return; } // an ENOENT is expected in the case of restricted registration, but we call this anyway to clean up any mess from previous tests.
                 if (e) {
                     waitFor.abort();
                     console.error("Can't remove login block", e);
-                    console.error(blockRequest);
                     return void cb(false);
                 }
+            }));
+        }).nThen(function (waitFor) {
+            // Init RPC
+            Pinpad.create(RT.network, RT.proxy, waitFor(function (e, _rpc) {
+                if (e) {
+                    waitFor.abort();
+                    console.error("Can't initialize RPC", e); // INVALID_KEYS
+                    return void cb(false);
+                }
+                rpc = _rpc;
             }));
         }).nThen(function (waitFor) {
             rpc.removeOwnedChannel(secret.channel, waitFor(function (e) {
@@ -404,66 +414,39 @@ define([
         });
     });
 
-    var sheetURL = '/common/onlyoffice/v5/web-apps/apps/spreadsheeteditor/main/index.html';
+    const ooEnabled = ApiConfig.onlyOffice && ApiConfig.onlyOffice.availableVersions.includes(
+        OOCurrentVersion.currentVersion,
+    );
+    var sheetURL = `/common/onlyoffice/dist/${OOCurrentVersion.currentVersion}/web-apps/apps/spreadsheeteditor/main/index.html`;
 
-    assert(function (cb, msg) {
-        msg.innerText = "Missing HTTP headers required for .xlsx export from sheets. ";
-        var expect = {
-            'cross-origin-resource-policy': 'cross-origin',
-            'cross-origin-embedder-policy': 'require-corp',
-        };
-
-        Tools.common_xhr(sheetURL, function (xhr) {
-            var result = !Object.keys(expect).some(function (k) {
-                var response = xhr.getResponseHeader(k);
-                if (response !== expect[k]) {
-                    msg.appendChild(h('span', [
-                        'A value of ',
-                        code(expect[k]),
-                        ' was expected for the ',
-                        code(k),
-                        ' HTTP header, but instead a value of "',
-                        code(response),
-                        '" was received.',
-                    ]));
-                    return true; // returning true indicates that a value is incorrect
-                }
+    if (ooEnabled) {
+        assert(function (cb, msg) {
+            msg.innerText = "Missing HTTP headers required for .xlsx export from sheets. ";
+            var expect = {
+                'cross-origin-resource-policy': 'cross-origin',
+                'cross-origin-embedder-policy': 'require-corp',
+            };
+    
+            Tools.common_xhr(sheetURL, function (xhr) {
+                var result = !Object.keys(expect).some(function (k) {
+                    var response = xhr.getResponseHeader(k);
+                    if (response !== expect[k]) {
+                        msg.appendChild(h('span', [
+                            'A value of ',
+                            code(expect[k]),
+                            ' was expected for the ',
+                            code(k),
+                            ' HTTP header, but instead a value of "',
+                            code(response),
+                            '" was received.',
+                        ]));
+                        return true; // returning true indicates that a value is incorrect
+                    }
+                });
+                cb(result || xhr.getAllResponseHeaders());
             });
-            cb(result || xhr.getAllResponseHeaders());
         });
-    });
-
-    assert(function (cb, msg) {
-        setWarningClass(msg);
-
-        var printMessage = function (value) {
-            msg.appendChild(h('span', [
-                "This instance hasn't opted out of participation in Google's ",
-                code('FLoC'),
-                " targeted advertizing network. ",
-
-                "This can be done by setting a ",
-                code('permissions-policy'),
-                " HTTP header with a value of ",
-                code('"interest-cohort=()"'),
-                " in the configuration of its reverse proxy instead of the current value (",
-                code(value),
-                "). See the provided NGINX configuration file for an example. ",
-
-                h('p', [
-                    link("https://www.eff.org/deeplinks/2021/04/am-i-floced-launch", 'Learn more'),
-                ]),
-            ]));
-        };
-
-        Tools.common_xhr('/', function (xhr) {
-            var header = xhr.getResponseHeader('permissions-policy') || '';
-            var rules = header.split(',');
-            if (rules.includes('interest-cohort=()')) { return void cb(true); }
-            printMessage(JSON.stringify(header));
-            cb(header);
-        });
-    });
+    }
 
     assert(function (cb, msg) {
         msg.appendChild(h('span', [
@@ -555,7 +538,7 @@ define([
     });
 
     assert(function (cb, msg) {
-        var support = ApiConfig.supportMailbox;
+        var support = ApiConfig.supportMailboxKey;
         setWarningClass(msg);
         msg.appendChild(h('span', [
             "This instance's encrypted support ticket functionality has not been enabled. This can make it difficult for its users to safely report issues that concern sensitive information. ",
@@ -700,20 +683,21 @@ define([
         });
     });
 
-    assert(function (cb, msg) { // FIXME possibly superseded by more advanced CSP tests?
-        var url = '/common/onlyoffice/v5/web-apps/apps/spreadsheeteditor/main/index.html';
-        msg.appendChild(CSP_WARNING(url));
-        deferredPostMessage({
-            command: 'GET_HEADER',
-            content: {
-                url: url,
-                header: 'content-security-policy',
-            },
-        }, function (content) {
-            var CSP_headers = parseCSP(content);
-            cb(hasOnlyOfficeHeaders(CSP_headers) || CSP_headers);
+    if (ooEnabled) {
+        assert(function (cb, msg) { // FIXME possibly superseded by more advanced CSP tests?
+            msg.appendChild(CSP_WARNING(sheetURL));
+            deferredPostMessage({
+                command: 'GET_HEADER',
+                content: {
+                    url: sheetURL,
+                    header: 'content-security-policy',
+                },
+            }, function (content) {
+                var CSP_headers = parseCSP(content);
+                cb(hasOnlyOfficeHeaders(CSP_headers) || CSP_headers);
+            });
         });
-    });
+    }
 
 /*
     assert(function (cb, msg) {
@@ -893,6 +877,19 @@ define([
     });
 */
 
+    var parseResponseHeaders = xhr => {
+        var H = {};
+        xhr.getAllResponseHeaders()
+            .split(/\r|\n/)
+            .filter(Boolean)
+            .forEach(line => {
+                line.replace(/([^:]+):(.*)/, (all, key, value) => {
+                    H[key] = value.trim();
+                });
+            });
+        return H;
+    };
+
     var CSP_DESCRIPTIONS = {
         'default-src': '',
         'style-src': '',
@@ -900,7 +897,7 @@ define([
         'child-src': '',
         'frame-src': '',
         'script-src': '',
-        'connect-src': "This rule restricts which URLs can be loaded by scripts. Overly permissive settings can allow users to be tracking using external resources, while overly restrictive settings may block pages from loading entirely.",
+        'connect-src': " This rule restricts which URLs can be loaded by scripts. Overly permissive settings can allow users to be tracked using external resources, while overly restrictive settings may block pages from loading entirely.",
         'img-src': '',
         'media-src': '',
         'worker-src': '',
@@ -984,11 +981,11 @@ define([
                     'blob:',
                     $outer,
                     $sandbox,
-                    API_URL.origin,
+                    API_URL && API_URL.origin,
+                    (HTTP_API_URL && HTTP_API_URL !== $outer) ? HTTP_API_URL : undefined,
                     isHTTPS(fileHost)? fileHost: undefined,
                     // support for cryptpad.fr configuration
-                    accounts_api,
-                    ![trimmedUnsafe, trimmedSafe].includes(ACCOUNTS_URL)? ACCOUNTS_URL: undefined,
+                    accounts_api
                 ],
 
                 'img-src': ["'self'", 'data:', 'blob:', $outer],
@@ -1025,9 +1022,9 @@ define([
                     $outer,
                     $sandbox,
                     API_URL.origin,
+                    (HTTP_API_URL && HTTP_API_URL !== $outer) ? HTTP_API_URL : undefined,
                     isHTTPS(fileHost)? fileHost: undefined,
-                    accounts_api,
-                    ![trimmedUnsafe, trimmedSafe].includes(ACCOUNTS_URL)? ACCOUNTS_URL: undefined,
+                    accounts_api
                 ],
                 'img-src': ["'self'", 'data:', 'blob:', $outer],
                 'media-src': ['blob:'],
@@ -1078,12 +1075,16 @@ define([
         });
     };
 
-    assert(function (cb, msg) {
-        var header = 'Access-Control-Allow-Origin';
-        var url = new URL('/', trimmedUnsafe).href;
-        Tools.common_xhr(url, function (xhr) {
-            var raw = xhr.getResponseHeader(header);
-            checkAllowedOrigins(raw, url, msg, cb);
+    // FIXME Blob and block can't be served for all origins anymore because of "Allow-Credentials"
+    // for advanced authentication features: rempve the tests?
+    ['/'/*, '/blob/placeholder.txt', '/block/placeholder.txt'*/].forEach(relativeURL => {
+        assert(function (cb, msg) {
+            var header = 'Access-Control-Allow-Origin';
+            var url = new URL(relativeURL, trimmedUnsafe).href;
+            Tools.common_xhr(url, function (xhr) {
+                var raw = xhr.getResponseHeader(header);
+                checkAllowedOrigins(raw, url, msg, cb);
+            });
         });
     });
 
@@ -1162,6 +1163,45 @@ define([
         });
     });
 
+    var COMMONLY_DUPLICATED_HEADERS = [
+        'X-Content-Type-Options',
+        'Access-Control-Allow-Origin',
+        'Permissions-Policy',
+        'X-XSS-Protection',
+    ];
+
+    ['/', '/blob/placeholder.txt', '/block/placeholder.txt'].forEach(relativeURL => {
+        assert(function (cb, msg) {
+            var url = new URL(relativeURL, trimmedUnsafe).href;
+            Tools.common_xhr(url, xhr => {
+                var span = h('span', h('p', '// DEBUGGING DUPLICATED HEADERS'));
+
+                var duplicated = false;
+                var pre = [];
+                COMMONLY_DUPLICATED_HEADERS.forEach(h => {
+                    var value = xhr.getResponseHeader(h);
+                    if (/,/.test(value)) {
+                        pre.push(`${h}: ${value}`);
+                        duplicated = true;
+                    }
+                });
+                if (duplicated) {
+                    span.appendChild(h('pre', pre.join('\n')));
+                }
+
+                // none of the headers should include a comma
+                // as that indicates they are duplicated
+                if (!duplicated) { return void cb(true); }
+
+                msg.appendChild(span);
+                cb({
+                    duplicated,
+                    url,
+                });
+            });
+        });
+    });
+
     var POLICY_ADVISORY = " This link will be included in the home page footer and 'About CryptPad' menu. It's advised that you either provide one or disable registration.";
     var APPCONFIG_DOCS_LINK = function (key, href) {
         return h('span', [
@@ -1212,7 +1252,7 @@ define([
 
     // check if they provide legal data
     assert(function (cb, msg) {
-        if (true) { return void cb(true); } // XXX stubbed while we determine whether this is necessary
+        if (true) { return void cb(true); } // FIXME stubbed while we determine whether this is necessary
         if (ApiConfig.restrictRegistration) { return void cb(true); }
 
         var url = Pages.customURLs.imprint;
@@ -1469,9 +1509,132 @@ define([
         });
     });
 
+    assert(function (cb, msg) {
+        // public instances are expected to be open for registration
+        // if this is not a public instance, pass this test immediately
+        if (!ApiConfig.listMyInstance) { return cb(true); }
+        // if it's public but registration is not registricted, that's also a pass
+        if (!ApiConfig.restrictRegistration) { return void cb(true); }
+
+        setWarningClass(msg);
+        msg.appendChild(h('span', [
+            "The administrators of this instance have opted in to inclusion in ",
+            link('https://cryptpad.org/instances/', 'the public instance directory'),
+            ' but have disabled registration, which is expected to be open.',
+            h('br'),
+            h('br'),
+            " Registration can be reopened using the instance's admin panel.",
+        ]));
+
+        cb(false);
+    });
+
+    var compareCustomized = function (a, b, cb) {
+        var getText = (url, done) => {
+            Tools.common_xhr(url, xhr => {
+                xhr.done(done);
+            });
+        };
+
+        var A, B;
+        nThen(w => {
+            getText(a, w(res => {
+                A = res;
+            }));
+            getText(b, w(res => {
+                B = res;
+            }));
+        }).nThen(() => {
+            cb(void 0, A === B);
+        });
+    };
+
+    var CUSTOMIZATIONS = [];
+    // check whether some important pages have been customized
+    assert(function (cb /*, msg */) {
+        nThen(function (w) {
+            // add whatever custom pages you want here
+            [
+                'application_config.js',
+                'pages.js',
+                'pages/index.js',
+            ].forEach(resource => {
+                // sort this above errors and warnings and style in a neutral color.
+                var A = `/customize.dist/${resource}`;
+                var B = `/customize/${resource}`;
+                compareCustomized(A, B, w((err, same) => {
+                    if (err || same) { return; }
+                    CUSTOMIZATIONS.push(resource);
+                }));
+            });
+        }).nThen(function () {
+            // Implementing these checks as a test was an easy way to ensure that
+            // they completed before the final report was shown. It's intentional
+            // that this always passes
+            cb(true);
+        });
+    });
+
     var serverToken;
-    Tools.common_xhr('/', function (xhr) {
-        serverToken = xhr.getResponseHeader('server');
+    assert(function (cb, msg) {
+        Tools.common_xhr('/', function (xhr) {
+            serverToken = xhr.getResponseHeader('server');
+
+            msg.appendChild(h('span', [
+                `Due to its use of `,
+                h('em', `CloudFlare`),
+                ` this instance may be inaccessible by users of the Tor network, and generally less secure because of the additional point of failure where code can be intercepted and modified by bad actors.`,
+            ]));
+
+            //if (1) { return void cb(false || {serverToken}); }
+            cb(!/cloudflare/i.test(serverToken) || {
+                serverToken,
+            });
+        });
+    });
+
+    assert(function (cb, msg) {
+        // provide an exception for development instances
+        if (isLocalhost(trimmedUnsafe) && isLocalhost(window.location.href)) {
+            return void cb(true);
+        }
+
+        msg.appendChild(h('span', [
+            'This instance is not configured to require HTTP Strict Transport Security (HSTS) - which instructs clients to only interact with it over a secure connection.',
+        ]));
+        Tools.common_xhr('/', function (xhr) {
+            var H = parseResponseHeaders(xhr);
+            var HSTS = H['strict-transport-security'];
+
+            // check for a numerical value of max-age
+            if (/max\-age=\d+/.test(HSTS)) {
+                return void cb(true);
+            }
+
+            // else call back with the value
+            cb(HSTS);
+        });
+    });
+
+    // confirm that POST requests to the `/upload-blob` endpoint
+    // return something other than a 404, which would probably indicate
+    // a reverse proxy misconfiguration
+    assert(function (cb, msg) {
+        msg.appendChild(h('span', [
+            `The server returned a 404 error when attempting to reach the `,
+            h('code', `/upload-blob`),
+            ` endpoint. This can be caused by an incorrectly configured reverse proxy.`,
+        ]));
+
+        fetch('/upload-blob', {
+            method: 'POST',
+        }).then(res => {
+            console.log({ upload_fetch_response: res });
+            cb(res.status !== 404);
+        }).catch(err => {
+            console.error(err);
+            cb(false);
+        });
     });
 
     var row = function (cells) {
@@ -1488,11 +1651,11 @@ define([
             console.error(err);
         }
 
-        return h('div.error', [
+        return h(`div.error.cp-test-status.${obj.type}`, [
             h('h5', obj.message),
             h('div.table-container',
                 h('table', [
-                    row(["Failed test number", obj.test + 1]),
+                    row(["Test number", obj.test + 1]),
                     row(["Returned value", h('pre', code(printableValue))]),
                 ])
             ),
@@ -1536,38 +1699,88 @@ define([
     };
 
     Assert.run(function (state) {
-        var errors = state.errors;
+        var isWarning = function (x) {
+            return x && /cp\-warning/.test(x.getAttribute('class'));
+        };
+
+        var isInfo = x => x && /cp\-info/.test(x.getAttribute('class'));
+        var errors = state.errors; // TODO anomalies might be better?
+
+        var categories = {
+            error: 0,
+            info: 0,
+            warning: 0,
+        };
+
+        errors.forEach(obj => {
+            if (isWarning(obj.message)) {
+                obj.type = 'warning';
+            } else if (isInfo(obj.message)) {
+                obj.type = 'info';
+                state.passed++;
+            } else {
+                obj.type = 'error';
+            }
+            Util.inc(categories, obj.type);
+        });
+
         var failed = errors.length;
 
         Messages.assert_numberOfTestsPassed = "{0} / {1} tests passed.";
 
-        var statusClass = failed? 'failure': 'success';
+        var statusClass;
+        if (categories.error !== 0) {
+            statusClass = 'failure';
+        } else if (categories.warning !== 0) {
+            statusClass = 'failure';
+        } else if (categories.info !== 0) {
+            statusClass = 'neutral';
+        } else {
+            statusClass = 'success';
+        }
 
         var failedDetails = "Details found below";
         var successDetails = "This checkup only tests the most common configuration issues. You may still experience errors or incorrect behaviour.";
         var details = h('p.cp-notice-details', failed? failedDetails: successDetails);
 
+        var sortMethod = function (a, b) {
+            if (a.type === 'info' && b.type !== 'info') {
+                return 1;
+            }
+            if (a.type === 'warning' && b.type !== 'warning') {
+                return 1;
+            }
+            return a.test - b.test;
+        };
+
+        var customizations;
+        if (CUSTOMIZATIONS.length) {
+            customizations = h('div.cp-notice-customizations', [
+                h('p', `The following assets have been customized for this instance:`),
+                h('ul', CUSTOMIZATIONS.map(asset => {
+                    var href = `/customize/${asset}`;
+                    return h('li', [
+                        h('a', {
+                            href: `${href}?${+new Date()}`,
+                            target: '_blank',
+                        }, href),
+                    ]);
+                })),
+                h('p', `Unexpected behaviour could be related to these changes. If you are this instance's administrator, please try temporarily disabling them before submitting a bug report.`),
+            ]);
+        }
+
         var summary = h('div.summary.' + statusClass, [
             versionStatement(),
             serverStatement(serverToken),
             browserStatement(),
+            customizations,
             h('p', Messages._getKey('assert_numberOfTestsPassed', [
                 state.passed,
                 state.total
             ])),
             details,
         ]);
-
-        var isWarning = function (x) {
-            return x && /cp\-warning/.test(x.getAttribute('class'));
-        };
-
-        var sortMethod = function (a, b) {
-            if (isWarning(a.message) && !isWarning(b.message)) {
-                return 1;
-            }
-            return a.test - b.test;
-        };
 
         var report = h('div.report', [
             summary,
@@ -1591,7 +1804,7 @@ define([
         $progress.html('').append(h('div.report.pending.summary', [
             versionStatement(),
             h('p', [
-                h('i.fa.fa-spinner.fa-pulse'),
+                Icons.get('loading'),
                 h('span', Messages._getKey('assert_numberOfTestsCompleted', [completed, total]))
             ])
         ]));

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 define([
     'jquery',
     'json.sortify',
@@ -6,8 +10,9 @@ define([
     '/common/hyperscript.js',
     '/common/common-interface.js',
     '/common/common-ui-elements.js',
-    '/customize/messages.js'
-], function($, Sortify, Util, Hash, h, UI, UIElements, Messages) {
+    '/customize/messages.js',
+    '/common/common-icons.js',
+], function($, Sortify, Util, Hash, h, UI, UIElements, Messages, Icons) {
     var Comments = {};
 
     /*
@@ -79,7 +84,7 @@ define([
         Env.metadataMgr.updateMetadata(md);
     };
 
-    var sendReplyNotification = function(Env, uid) {
+    var sendReplyNotification = function(Env, uid, mentionedCurve) {
         if (!Env.comments || !Env.comments.data || !Env.comments.authors) { return; }
         if (!Env.common.isLoggedIn()) { return; }
         var thread = Env.comments.data[uid];
@@ -88,8 +93,6 @@ define([
         var privateData = Env.metadataMgr.getPrivateData();
         var others = {};
 
-
-        // XXX mentioned users should be excluded from the list of notified recipients to avoid notifying them twice
         // Get all the other registered users with a mailbox
         thread.m.forEach(function(obj) {
             var u = obj.u;
@@ -97,6 +100,9 @@ define([
             var author = Env.comments.authors[u];
             if (!author || others[u] || !author.notifications || !author.curvePublic) { return; }
             if (author.curvePublic === userData.curvePublic) { return; } // don't send to yourself
+            if (Object.keys(mentionedCurve || {}).includes(author.curvePublic)) {
+                return; // Don't send to mentioned users
+            }
             others[u] = {
                 curvePublic: author.curvePublic,
                 comment: obj.m,
@@ -160,13 +166,13 @@ define([
         var cancel = h('button.btn.btn-cancel', {
             tabindex: 1
         }, [
-            h('i.fa.fa-times'),
+            Icons.get('close'),
             Messages.cancel
         ]);
         var submit = h('button.btn.btn-primary', {
             tabindex: 1
         }, [
-            h('i.fa.fa-paper-plane-o'),
+            Icons.get('send'),
             Messages.comments_submit
         ]);
 
@@ -203,7 +209,7 @@ define([
             });
 
             // Push the content
-            cb(content);
+            cb(content, notify);
         });
         $(cancel).click(function(e) {
             e.stopPropagation();
@@ -255,7 +261,7 @@ define([
             deleteButton = h('button.btn.btn-danger', {
                 tabindex: 1
             }, [
-                h('i.fa.fa-times'),
+                Icons.get('trash-full'),
                 Messages.kanban_delete
             ]);
             $(deleteButton).click(function(e) {
@@ -309,11 +315,11 @@ define([
 
         // Remove everything
         Env.$container.html('');
-        var hideBtn = h('button.cp-pad-hide.btn.btn-default.fa.fa-chevron-right');
+        var hideBtn = h('button.cp-pad-hide.btn.btn-default', Icons.get('chevron-right'));
         var showBtn = h('button.cp-pad-show.btn.btn-default', {
             title: Messages.poll_comment_list
         }, [
-            h('i.fa.fa-comment')
+            Icons.get('comments')
         ]);
 
 
@@ -435,7 +441,7 @@ define([
                     edit = h('span.cp-comment-edit', {
                         tabindex: 1,
                         title: Messages.clickToEdit
-                    }, h('i.fa.fa-pencil'));
+                    }, Icons.get('edit'));
                     $(edit).click(function(e) {
                         Env.$container.find('.cp-comment-active').removeClass('cp-comment-active');
                         $div.addClass('cp-comment-active');
@@ -498,13 +504,13 @@ define([
             var reply = h('button.btn.btn-secondary', {
                 tabindex: 1
             }, [
-                h('i.fa.fa-reply'),
+                Icons.get('reply'),
                 Messages.comments_reply
             ]);
             var resolve = h('button.btn.btn-primary', {
                 tabindex: 1
             }, [
-                h('i.fa.fa-check'),
+                Icons.get('check'),
                 Messages.comments_resolve
             ]);
 
@@ -525,7 +531,7 @@ define([
             $(reply).click(function(e) {
                 e.stopPropagation();
                 $actions.hide();
-                var form = getCommentForm(Env, key, function(val) {
+                var form = getCommentForm(Env, key, function(val, mentioned) {
                     // Show the "reply" and "resolve" buttons again
                     $(form).closest('.cp-comment-container')
                         .find('.cp-comment-actions').css('display', '');
@@ -551,7 +557,7 @@ define([
                     });
 
                     // Notify other users
-                    sendReplyNotification(Env, key);
+                    sendReplyNotification(Env, key, mentioned);
 
                     // Send to chainpad
                     updateMetadata(Env);
@@ -776,7 +782,7 @@ define([
 
         var button = h('button.btn.btn-secondary', {
             title: Messages.comments_comment
-        }, h('i.fa.fa-commenting'));
+        }, Icons.get('comment'));
         Env.bubble = {
             range: ranges[ranges.length-1],
             button: button

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 var EN = require("../../www/common/translations/messages.json");
 var Util = require("../../www/common/common-util.js");
 var Fs = require("fs");
@@ -6,6 +10,7 @@ var simpleTags = [
     '<br>',
     '<a href="/login/">',
     '<a href="/register/">',
+    '<a href="/recovery/">',
 
     // FIXME
     "<a href='#'>",
@@ -48,7 +53,7 @@ special_rules.fr = function (s) {
     ignore instances where the following character is a '/'
     because this is probably a URL (http(s)://)
 */
-    return /\S[:;\?\!][^\/]{1,}/.test(s);
+    return /\S[:;\?\!][^\/]{1,}/.test(s.replace(/mailto:/g, " :"));
 };
 
 var noop = function () {};
@@ -170,7 +175,7 @@ var processLang = function (map, lang, primary) {
 
                 console.log();
             }
-            //if (mismatchedTags.length) { console.log(mismatchedTags); } // XXX
+            //if (mismatchedTags.length) { console.log(mismatchedTags); } // TODO
         }
     });
 };

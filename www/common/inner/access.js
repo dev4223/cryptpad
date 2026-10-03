@@ -1,15 +1,21 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 define([
     'jquery',
     '/common/common-util.js',
     '/common/common-hash.js',
     '/common/common-interface.js',
     '/common/common-ui-elements.js',
+    '/common/pad-types.js',
     '/common/inner/common-modal.js',
     '/common/hyperscript.js',
     '/customize/messages.js',
-    '/bower_components/nthen/index.js',
-], function ($, Util, Hash, UI, UIElements, Modal, h,
-             Messages, nThen) {
+    '/components/nthen/index.js',
+    '/common/common-icons.js',
+], function ($, Util, Hash, UI, UIElements, Types, Modal, h,
+             Messages, nThen, Icons) {
     var Access = {};
 
     var getOwnersTab = function (Env, data, opts, _cb) {
@@ -26,22 +32,18 @@ define([
         var metadataMgr = common.getMetadataMgr();
 
         var priv = metadataMgr.getPrivateData();
-        var channel = data.channel || priv.channel;
         var owners = data.owners || [];
         var pending_owners = data.pending_owners || [];
         var teamOwner = data.teamId;
         var title = opts.title;
 
-        var p = priv.propChannels;
-        var otherChan;
-        if (p && p.answersChannel) {
-            otherChan = [p.answersChannel];
-        }
-
         opts = opts || {};
+
+        const { attributes, otherChan } = Modal.getOtherChans(priv, opts);
+
         var redrawAll = function () {};
 
-        var addBtn = h('button.btn.btn-primary.cp-access-add', [h('i.fa.fa-arrow-left'), h('i.fa.fa-arrow-up')]);
+        var addBtn = h('button.btn.btn-primary.cp-access-add', [Icons.get('arrow-left'), Icons.get('arrow-up')]);
 
         var div1 = h('div.cp-share-column.cp-ownership');
         var divMid = h('div.cp-share-column-mid', addBtn);
@@ -101,7 +103,8 @@ define([
                 }).nThen(function (waitFor) {
                     // Send the command
                     sframeChan.query('Q_SET_PAD_METADATA', {
-                        channel: channel,
+                        channel: data.channel || priv.channel,
+                        channels: otherChan,
                         command: pending ? 'RM_PENDING_OWNERS' : 'RM_OWNERS',
                         value: [ed],
                         teamId: teamOwner
@@ -122,7 +125,7 @@ define([
                     var friend = friends[curve];
                     if (!friend) { return; }
                     common.mailbox.sendTo("RM_OWNER", {
-                        channel: channel,
+                        channel: data.channel || priv.channel,
                         title: data.title || title,
                         pending: pending
                     }, {
@@ -260,7 +263,7 @@ define([
                 if (toAddTeams.length) {
                     // Send the command
                     sframeChan.query('Q_SET_PAD_METADATA', {
-                        channel: channel,
+                        channel: data.channel || priv.channel,
                         channels: otherChan,
                         command: 'ADD_OWNERS',
                         value: toAddTeams.map(function (obj) { return obj.edPublic; }),
@@ -296,7 +299,7 @@ define([
                 if (toAdd.length) {
                     // Send the command
                     sframeChan.query('Q_SET_PAD_METADATA', {
-                        channel: channel,
+                        channel: data.channel || priv.channel,
                         channels: otherChan,
                         command: 'ADD_PENDING_OWNERS',
                         value: toAdd,
@@ -317,7 +320,7 @@ define([
                 if (addMe) {
                     // Send the command
                     sframeChan.query('Q_SET_PAD_METADATA', {
-                        channel: channel,
+                        channel: data.channel || priv.channel,
                         channels: otherChan,
                         command: 'ADD_OWNERS',
                         value: [priv.edPublic],
@@ -331,22 +334,25 @@ define([
                                                                           : Messages.error;
                             return void UI.warn(text);
                         }
+                        data.attributes = attributes;
+                        sframeChan.query('Q_ACCEPT_OWNERSHIP', data, function (err, res) {
+                            if (err || (res && res.error)) {
+                                return void console.error(err || res.error);
+                            }
+                            UI.log(Messages.saved);
+                        });
                     }));
                 }
             }).nThen(function (waitFor) {
                 var href = data.href;
-                var hashes = priv.hashes || {};
-                var bestHash = hashes.editHash || hashes.viewHash || hashes.fileHash;
-                if (data.fakeHref) {
-                    href = Hash.hashToHref(bestHash, priv.app);
-                }
                 sel.forEach(function (el) {
                     var curve = $(el).attr('data-curve');
                     if (curve === user.curvePublic) { return; }
                     var friend = friends[curve];
                     if (!friend) { return; }
                     common.mailbox.sendTo("ADD_OWNER", {
-                        channel: channel,
+                        channel: data.channel || priv.channel,
+                        attributes,
                         channels: otherChan,
                         href: href,
                         calendar: opts.calendar,
@@ -361,6 +367,13 @@ define([
                 redrawAll(true);
                 UI.log(Messages.saved);
             });
+        });
+        $(addBtn).on('keydown', function (event) {
+            if (event.keyCode === 13) {
+                event.preventDefault();
+                event.stopPropagation();
+                $(addBtn).click();
+            }
         });
 
         var called = false;
@@ -421,21 +434,16 @@ define([
         var metadataMgr = common.getMetadataMgr();
 
         var priv = metadataMgr.getPrivateData();
-        var channel = data.channel || priv.channel;
         var owners = data.owners || [];
         var restricted = data.restricted || false;
         var allowed = data.allowed || [];
         var teamOwner = data.teamId;
 
-        var p = priv.propChannels;
-        var otherChan;
-        if (p && p.answersChannel) {
-            otherChan = [p.answersChannel];
-        }
+        const { otherChan } = Modal.getOtherChans(priv, opts);
 
         var redrawAll = function () {};
 
-        var addBtn = h('button.btn.btn-primary.cp-access-add', [h('i.fa.fa-arrow-left'), h('i.fa.fa-arrow-up')]);
+        var addBtn = h('button.btn.btn-primary.cp-access-add', [[Icons.get('arrow-left'), Icons.get('arrow-up')]]);
 
         var div1 = h('div.cp-share-column.cp-allowlist');
         var divMid = h('div.cp-share-column-mid.cp-overlay-container', [
@@ -455,6 +463,9 @@ define([
 
         var setLock = function (locked) {
             $(link).find('.cp-overlay').toggle(locked);
+            $(link).find('.cp-usergrid-user').attr('tabindex', locked ? -1 : 0);
+            $(link).find('.cp-usergrid-filter input').prop('disabled', locked);
+            $(link).find('.cp-access-add').prop('disabled', locked);
         };
 
         // Remove owner column
@@ -510,7 +521,7 @@ define([
                     */
                     // Send the command
                     sframeChan.query('Q_SET_PAD_METADATA', {
-                        channel: channel,
+                        channel: data.channel || priv.channel,
                         channels: otherChan,
                         command: 'RM_ALLOWED',
                         value: [ed],
@@ -540,7 +551,7 @@ define([
                 spinner.spin();
                 var val = $checkbox.is(':checked');
                 sframeChan.query('Q_SET_PAD_METADATA', {
-                    channel: channel,
+                    channel: data.channel || priv.channel,
                     channels: otherChan,
                     command: 'RESTRICT_ACCESS',
                     value: [Boolean(val)],
@@ -640,7 +651,6 @@ define([
 
             return $div;
         };
-
         $(addBtn).click(function () {
             var priv = metadataMgr.getPrivateData();
             var user = metadataMgr.getUserData();
@@ -651,12 +661,14 @@ define([
             var $sel = $div.find('.cp-usergrid-user.cp-selected');
             var sel = $sel.toArray();
             if (!sel.length) { return; }
+            var dataToAdd = [];
             var toAdd = sel.map(function (el) {
                 var curve = $(el).attr('data-curve');
                 var teamId = $(el).attr('data-teamid');
                 // If the pad is woned by a team, we can transfer ownership to ourselves
                 if (curve === user.curvePublic && teamOwner) { return priv.edPublic; }
                 var data = friends[curve] || teamsData[teamId];
+                dataToAdd.push(data);
                 if (!data) { return; }
                 return data.edPublic;
             }).filter(function (x) { return x; });
@@ -676,7 +688,7 @@ define([
                 if (toAdd.length) {
                     // Send the command
                     sframeChan.query('Q_SET_PAD_METADATA', {
-                        channel: channel,
+                        channel: data.channel || priv.channel,
                         channels: otherChan,
                         command: 'ADD_ALLOWED',
                         value: toAdd,
@@ -684,6 +696,19 @@ define([
                     }, waitFor(function (err, res) {
                         err = err || (res && res.error);
                         redrawAll(true);
+                        dataToAdd.forEach(function(mailbox) {
+                            if (mailbox.notifications && mailbox.curvePublic) {
+                                common.mailbox.sendTo("ADD_TO_ACCESS_LIST", {
+                                    channel: data.channel || priv.channel,
+                                }, {
+                                    channel: mailbox.notifications,
+                                    curvePublic: mailbox.curvePublic
+                                });
+                            } else {
+                                return;
+                            }
+                        });
+
                         if (err) {
                             waitFor.abort();
                             var text = err === "INSUFFICIENT_PERMISSIONS" ? Messages.fm_forbidden
@@ -695,6 +720,13 @@ define([
             }).nThen(function () {
                 UI.log(Messages.saved);
             });
+        });
+        $(addBtn).on('keydown', function (event) {
+            if (event.keyCode === 13) {
+                event.preventDefault();
+                event.stopPropagation();
+                $(addBtn).click();
+            }
         });
 
         var called = false;
@@ -739,7 +771,7 @@ define([
         var priv = common.getMetadataMgr().getPrivateData();
         var user = common.getMetadataMgr().getUserData();
         var edPublic = priv.edPublic;
-        var strangers = 0;
+        //var strangers = 0;
         var _owners = {};
         list.forEach(function (ed) {
             // If a friend is an owner, add their name to the list
@@ -750,7 +782,8 @@ define([
                 _owners[ed] = {
                     //selected: true,
                     name: user.name,
-                    avatar: user.avatar
+                    avatar: user.avatar,
+                    uid: user.uid
                 };
                 return;
             }
@@ -789,7 +822,7 @@ define([
                 // in the pad itself (as is the case of the uid in rich text comments)
                 // TODO or just implement "Acquaintances"
             };
-            strangers++;
+            //strangers++;
         });
         if (!Object.keys(_owners).length) { return; }
         /*
@@ -815,6 +848,8 @@ define([
         var sframeChan = common.getSframeChannel();
         var metadataMgr = common.getMetadataMgr();
         var priv = metadataMgr.getPrivateData();
+
+        const { otherChan } = Modal.getOtherChans(priv, opts);
 
         var $div = $(h('div.cp-share-columns'));
 
@@ -871,8 +906,8 @@ define([
             // In the properties, we should have the edit href if we know it.
             // We should know it because the pad is stored, but it's better to check...
             //if (!data.noEditPassword && !opts.noEditPassword && owned && data.href) {
-            if (!data.noEditPassword && !opts.noEditPassword && owned && data.href && parsed.type !== "form") { // XXX password change in forms block responses (validation & decryption)
-                var isOO = parsed.type === 'sheet';
+            if (!data.noEditPassword && !opts.noEditPassword && owned && data.href && parsed.type !== "form") { // TODO password change in forms block responses (validation & decryption)
+                var isOO = Types?.OO_APPS?.includes(parsed.type);
                 var isFile = parsed.hashData.type === 'file';
                 var isSharedFolder = parsed.type === 'drive';
 
@@ -904,7 +939,7 @@ define([
                     pLocked = true;
                     UI.confirm(changePwConfirm, function (yes) {
                         if (!yes) { pLocked = false; return; }
-                        $(passwordOk).html('').append(h('span.fa.fa-spinner.fa-spin', {style: 'margin-left: 0'}));
+                        $(passwordOk).html('').append(Icons.get('loading', {style: 'margin: 0; animation: spin 10s linear infinite;'}));
                         var q = isFile ? 'Q_BLOB_PASSWORD_CHANGE' :
                                     (isOO ? 'Q_OO_PASSWORD_CHANGE' : 'Q_PAD_PASSWORD_CHANGE');
 
@@ -928,25 +963,29 @@ define([
                         }
 
                         var href = data.href;
-                        var hashes = priv.hashes || {};
-                        var bestHash = hashes.editHash || hashes.viewHash || hashes.fileHash;
-                        if (data.fakeHref) {
-                            href = Hash.hashToHref(bestHash, priv.app);
-                        }
-                        var isNotStored = Boolean(data.fakeHref);
+                        var isNotStored = Boolean(data.isNotStored);
                         sframeChan.query(q, {
                             teamId: typeof(owned) !== "boolean" ? owned : undefined,
                             href: href,
-                            oldPassword: priv.password,
+                            oldPassword: data.password || priv.password,
                             password: newPass
-                        }, function (err, data) {
+                        }, function (err, res) {
                             $(passwordOk).text(Messages.properties_changePasswordButton);
                             pLocked = false;
-                            if (err || data.error) {
-                                console.error(err || data.error);
+                            err = err || res.error;
+                            if (err) {
+                                if (err === "PASSWORD_ALREADY_USED") {
+                                    return void UI.alert(Messages.access_passwordUsed);
+                                }
+                                console.error(err);
                                 return void UI.alert(Messages.properties_passwordError);
                             }
                             UI.findOKButton().click();
+
+                            data.password = newPass;
+                            data.href = res.href;
+                            data.roHref = res.roHref;
+                            data.channel = res.channel;
 
                             $pwInput.val(newPass);
                             if (newPass) {
@@ -963,7 +1002,7 @@ define([
                             if (isFile || priv.app !== parsed.type) {
                                 if (onProgress && onProgress.stop) { onProgress.stop(); }
                                 $(passwordOk).text(Messages.properties_changePasswordButton);
-                                var alertMsg = data.warning ? Messages.properties_passwordWarningFile
+                                var alertMsg = res.warning ? Messages.properties_passwordWarningFile
                                                             : Messages.properties_passwordSuccessFile;
                                 return void UI.alert(alertMsg, undefined, {force: true});
                             }
@@ -972,7 +1011,7 @@ define([
                             // Use hidden hash if needed (we're an owner of this pad so we know it is stored)
                             var useUnsafe = Util.find(priv, ['settings', 'security', 'unsafeLinks']);
                             if (isNotStored) { useUnsafe = true; }
-                            var _href = (priv.readOnly && data.roHref) ? data.roHref : data.href;
+                            var _href = (priv.readOnly && res.roHref) ? res.roHref : res.href;
                             if (useUnsafe !== true) {
                                 var newParsed = Hash.parsePadUrl(_href);
                                 var newSecret = Hash.getSecrets(newParsed.type, newParsed.hash, newPass);
@@ -983,23 +1022,36 @@ define([
                             // Trigger a page reload if the href didn't change
                             if (_href === href) { _href = undefined; }
 
-                            if (data.warning) {
+                            if (res.warning) {
                                 return void UI.alert(Messages.properties_passwordWarning, function () {
+                                    if (isNotStored) {
+                                        return sframeChan.query('Q_PASSWORD_CHECK', newPass, () => { common.gotoURL(_href);  });
+                                    }
                                     common.gotoURL(_href);
                                 }, {force: true});
                             }
                             return void UI.alert(UIElements.fixInlineBRs(Messages.properties_passwordSuccess), function () {
                                 if (!isSharedFolder) {
+                                    if (isNotStored) {
+                                        return sframeChan.query('Q_PASSWORD_CHECK', newPass, () => { common.gotoURL(_href);  });
+                                    }
                                     common.gotoURL(_href);
                                 }
                             });
                         });
                     });
                 });
+                $(passwordOk).on('keydown', function (e) {
+                    if (e.keyCode === 13) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        $(passwordOk).click();
+                    }
+                });
                 $d.append(changePass);
             }
             if (owned) {
-                var deleteOwned = h('button.btn.btn-danger', [h('i.cptools.cptools-destroy'), Messages.fc_delete_owned]);
+                var deleteOwned = h('button.btn.btn-danger', [Icons.get('destroy'), Messages.fc_delete_owned]);
                 var spinner = UI.makeSpinner();
                 UI.confirmButton(deleteOwned, {
                     classes: 'btn-danger'
@@ -1014,13 +1066,15 @@ define([
                         if (err || (obj && obj.error)) { UI.warn(Messages.error); }
                     });
 
-                    // If this is a form wiht a answer channel, delete it too
-                    var p = priv.propChannels;
-                    if (p.answersChannel) {
-                        sframeChan.query('Q_DELETE_OWNED', {
-                            teamId: typeof(owned) !== "boolean" ? owned : undefined,
-                            channel: p.answersChannel
-                        }, function () {});
+                    // If this is a form with an answer channel or an office
+                    // doc with an rt channel, delete it too
+                    if (otherChan) {
+                        otherChan.forEach(chan => {
+                            sframeChan.query('Q_DELETE_OWNED', {
+                                teamId: typeof(owned) !== "boolean" ? owned : undefined,
+                                channel: chan
+                            }, function () {});
+                        });
                     }
                 });
                 if (!opts.noEditPassword) { $d.append(h('br')); }
@@ -1055,13 +1109,13 @@ define([
             var owned = Modal.isOwned(Env, data);
 
             // Request edit access
-            if (common.isLoggedIn() && ((data.roHref && !data.href) || data.fakeHref) && !owned && !opts.calendar && priv.app !== 'form') {
+            if (common.isLoggedIn() && data.roHref && !owned && !opts.calendar && priv.app !== 'form' && !data.href) {
                 var requestButton = h('button.btn.btn-secondary.no-margin.cp-access-margin-right',
                                         Messages.requestEdit_button);
                 var requestBlock = h('p', requestButton);
                 var $requestBlock = $(requestBlock).hide();
                 content.push(requestBlock);
-                sframeChan.query('Q_REQUEST_ACCESS', {
+                sframeChan.query('Q_CONTACT_OWNER', {
                     send: false,
                     metadata: data
                 }, function (err, obj) {
@@ -1072,9 +1126,10 @@ define([
                     $requestBlock.show().find('button').click(function () {
                         if (spinner.getState()) { return; }
                         spinner.spin();
-                        sframeChan.query('Q_REQUEST_ACCESS', {
+                        sframeChan.query('Q_CONTACT_OWNER', {
                             send: true,
-                            metadata: data
+                            metadata: data,
+                            query: "REQUEST_PAD_ACCESS"
                         }, function (err, obj) {
                             if (obj && obj.state) {
                                 UI.log(Messages.requestEdit_sent);
@@ -1122,7 +1177,7 @@ define([
                 });
                 $cbox.find('.cp-checkmark-label').addClass('cp-access-margin-right');
                 $cbox.find('.cp-checkmark-mark')
-                    .after(h('span.fa.fa-bell-slash.cp-access-margin-right'));
+                    .after(Icons.get('mute'));
                 content.push(h('p', cbox));
             }
 
@@ -1153,7 +1208,6 @@ define([
                 redraw(ownersOrAllow);
             });
         });
-
         cb(void 0, $div);
     };
 
@@ -1175,16 +1229,16 @@ define([
         var tabs = [{
             getTab: getAccessTab,
             title: Messages.access_main,
-            icon: "fa fa-unlock-alt",
+            icon: "access",
         }, {
             getTab: getAllowTab,
             title: Messages.access_allow,
-            icon: "fa fa-list",
+            icon: "list",
             buttons: buttons,
         }, {
             getTab: getOwnersTab,
             title: Messages.creation_owners,
-            icon: "fa fa-id-badge",
+            icon: "document-owner",
             buttons: buttons,
         }];
         Modal.getModal(common, opts, tabs, cb);

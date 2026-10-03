@@ -1,10 +1,15 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 define([
     'jquery',
     '/customize/messages.js',
     '/common/common-util.js',
     '/common/visible.js',
-    '/bower_components/dragula.js/dist/dragula.min.js',
-], function ($, Messages, Util, Visible, Dragula) {
+    '/components/dragula/dist/dragula.min.js',
+    '/common/common-icons.js',
+], function ($, Messages, Util, Visible, Dragula, Icons) {
         /**
          * jKanban
          * Vanilla Javascript plugin for manage kanban boards
@@ -40,7 +45,7 @@ define([
             getTextColor: function () { return '#000'; },
             cursors: {},
             tags: [],
-            dragBoards: true,
+            dragBoards: 'ontouchstart' in window ? false : true,
             addItemButton: false,
             readOnly: false,
             dragEl: function (/*el, source*/) {},
@@ -106,25 +111,25 @@ define([
             var boardContainerOuter = document.createElement('div');
             boardContainerOuter.classList.add('kanban-container-outer');
             var boardContainer = document.createElement('div');
+            boardContainer.setAttribute('id', 'kanban-container');
             boardContainer.classList.add('kanban-container');
             boardContainerOuter.appendChild(boardContainer);
+            self.container = boardContainer;
+            //add boards
+            self.addBoards();
             var addBoard = document.createElement('div');
             addBoard.id = 'kanban-addboard';
-            addBoard.innerHTML = '<i class="fa fa-plus"></i>';
+            addBoard.innerHTML = Icons.get('add').outerHTML;
             boardContainer.appendChild(addBoard);
             var trash = self.trashContainer = document.createElement('div');
             trash.setAttribute('id', 'kanban-trash');
             trash.setAttribute('class', 'kanban-trash');
             var trashBg = document.createElement('div');
-            var trashIcon = document.createElement('i');
-            trashIcon.setAttribute('class', 'fa fa-trash');
+            var trashIcon = Icons.get('trash-full');
             trash.appendChild(trashIcon);
             trash.appendChild(trashBg);
             self.boardContainer.push(trash);
 
-            self.container = boardContainer;
-            //add boards
-            self.addBoards();
             //appends to container
             self.element.appendChild(boardContainerOuter);
             self.element.appendChild(trash);
@@ -155,12 +160,20 @@ define([
         }
 
         function __onAddItemClickHandler(nodeItem) {
-            nodeItem.addEventListener('click', function (e) {
+            function handleAddItem(e, item) {
                 e.preventDefault();
                 e.stopPropagation();
-                self.options.addItemClick(this);
-                if (typeof (this.clickfn) === 'function') {
-                    this.clickfn(this);
+                self.options.addItemClick(item);
+                if (typeof (item.clickfn) === 'function') {
+                    item.clickfn(item);
+                }
+            }
+            nodeItem.addEventListener('click', function (e) {
+                handleAddItem(e,this);
+            });
+            nodeItem.addEventListener('keydown', function (e) {
+                if (e.keyCode === 13) {
+                    handleAddItem(e,this);
                 }
             });
         }
@@ -300,9 +313,16 @@ define([
                         if (target.classList.contains('kanban-trash')) {
                             list.splice(index1, 1);
                             if (list.indexOf(id) === -1) {
+                                var board = self.options.boards.data[id];
+                                var boardItems = board.item;
+                                boardItems.forEach(function(item) {
+                                    delete self.options.boards.items[item];
+                                });
                                 delete self.options.boards.data[id];
                             }
                             self.onChange();
+                            self.setBoards(self.options.boards);
+
                             return;
                         }
 
@@ -332,6 +352,7 @@ define([
                     moves: function (el) {
                         if (self.options.readOnly) { return false; }
                         if (el.classList.contains('new-item')) { return false; }
+                        if (self.options.dragItems === false) {return false;}
                         return el.classList.contains('kanban-item');
                     },
                     accepts: function () {
@@ -525,11 +546,15 @@ define([
                 var el = self.options.getAvatar(c);
                 nodeCursors.appendChild(el);
             });
-            var nodeItemText = document.createElement('div');
+            var nodeItemTextContainer = document.createElement('div');
+            nodeItemTextContainer.classList.add('kanban-item-text-container');
+            nodeItem.appendChild(nodeItemTextContainer);
+            var nodeItemText  = document.createElement('div');
             nodeItemText.classList.add('kanban-item-text');
             nodeItemText.dataset.eid = element.id;
             nodeItemText.innerText = element.title;
-            nodeItem.appendChild(nodeItemText);
+            nodeItemTextContainer.appendChild(nodeItemText);
+            
             // Check if this card is filtered out
             if (Array.isArray(self.options.tags) && self.options.tags.length) {
                 var hide;
@@ -693,6 +718,7 @@ define([
             //content board
             var contentBoard = document.createElement('main');
             contentBoard.classList.add('kanban-drag');
+            contentBoard.setAttribute('tabindex', '-1');
             //add drag to array for dragula
             self.boardContainer.push(contentBoard);
             (board.item || []).forEach(function (itemkey) {
@@ -713,13 +739,17 @@ define([
             //add button
             var addTopBoardItem = document.createElement('span');
             addTopBoardItem.classList.add('kanban-title-button');
+            $(addTopBoardItem).attr('tabindex', '0');
+            $(addTopBoardItem).attr('aria-label', Messages.addItemTop);
             addTopBoardItem.setAttribute('data-top', "1");
-            addTopBoardItem.innerHTML = '<i class="cptools cptools-add-top">';
+            addTopBoardItem.innerHTML = Icons.get('kanban-add-top').outerHTML;
             footerBoard.appendChild(addTopBoardItem);
             __onAddItemClickHandler(addTopBoardItem);
             var addBoardItem = document.createElement('span');
             addBoardItem.classList.add('kanban-title-button');
-            addBoardItem.innerHTML = '<i class="cptools cptools-add-bottom">';
+            $(addBoardItem).attr('tabindex', '0');
+            $(addBoardItem).attr('aria-label', Messages.addItemBottom);
+            addBoardItem.innerHTML = Icons.get('kanban-add-bottom').outerHTML;
             footerBoard.appendChild(addBoardItem);
             __onAddItemClickHandler(addBoardItem);
 
@@ -731,6 +761,15 @@ define([
 
             return boardNode;
         };
+
+        let reorder = () => {
+            // Push "add" button to the end of the list
+            let add = document.getElementById('kanban-addboard');
+            let list = document.getElementById('kanban-container');
+            if (!add || !list) { return; }
+            list.appendChild(add);
+        };
+
         this.addBoard = function (board) {
             if (!board || !board.id) { return; }
             // We need to store all the columns in _boards too because it's used to
@@ -751,6 +790,7 @@ define([
             _boards.list.push(board.id);
             var boardNode = getBoardNode(board);
             self.container.appendChild(boardNode);
+            reorder();
         };
 
         this.addBoards = function() {
@@ -818,6 +858,7 @@ define([
                     $('.kanban-board[data-id="'+id+'"] .kanban-drag').scrollTop(scroll[id]);
                 });
                 $el.scrollLeft(scrollLeft);
+                reorder();
             };
 
             // If the tab is not focused, redraw on focus

@@ -1,18 +1,23 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 define([
     'jquery',
     '/common/toolbar.js',
-    '/bower_components/nthen/index.js',
+    '/components/nthen/index.js',
     '/common/sframe-common.js',
     '/common/common-hash.js',
+    '/common/common-util.js',
     '/common/common-interface.js',
+    '/common/common-ui-elements.js',
     '/customize/messages.js',
 
     '/common/media-tag.js',
 
-    '/bower_components/file-saver/FileSaver.min.js',
+    '/components/file-saver/FileSaver.min.js',
 
-    'css!/bower_components/bootstrap/dist/css/bootstrap.min.css',
-    'css!/bower_components/components-font-awesome/css/font-awesome.min.css',
+    'css!/components/bootstrap/dist/css/bootstrap.min.css',
     'less!/file/app-file.less',
 
 ], function (
@@ -21,12 +26,13 @@ define([
     nThen,
     SFCommon,
     Hash,
+    Util,
     UI,
+    UIElements,
     Messages,
     MediaTag)
 {
     var saveAs = window.saveAs;
-    var Nacl = window.nacl;
 
     var APP = window.APP = {};
 
@@ -55,7 +61,7 @@ define([
         }
 
         var Title = common.createTitle({});
-        var displayed = ['useradmin', 'newpad', 'limit', 'upgrade', 'notifications'];
+        var displayed = ['useradmin', 'newpad', 'limit', 'upgrade', 'notifications', 'pageTitle'];
         if (!uploadMode) {
             displayed.push('fileshare');
             displayed.push('access');
@@ -64,12 +70,10 @@ define([
             displayed: displayed,
             $container: $bar,
             metadataMgr: metadataMgr,
+            pageTitle: Messages.upload_title,
+            addFileMenu: true,
             sfCommon: common,
         };
-        if (uploadMode) {
-            displayed.push('pageTitle');
-            configTb.pageTitle = Messages.upload_title;
-        }
         var toolbar = APP.toolbar = Toolbar.create(configTb);
 
         if (!uploadMode) {
@@ -77,12 +81,11 @@ define([
                 var hexFileName = secret.channel;
                 var src = fileHost + Hash.getBlobPathFromHex(hexFileName);
                 var key = secret.keys && secret.keys.cryptKey;
-                var cryptKey = Nacl.util.encodeBase64(key);
+                var cryptKey = Util.encodeBase64(key);
 
                 var $mt = $dlview.find('media-tag');
                 $mt.attr('src', src);
                 $mt.attr('data-crypto-key', 'cryptpad:'+cryptKey);
-                $mt.css('transform', 'scale(2)');
 
                 var rightsideDisplayed = false;
                 var metadataReceived = false;
@@ -92,10 +95,10 @@ define([
                 MediaTag($mt[0]).on('complete', function (decrypted) {
                     $mt.css('transform', '');
                     if (!rightsideDisplayed) {
-                        toolbar.$drawer
-                        .append(common.createButton('export', true, {}, function () {
+                        let $exportBtn = common.createButton('export', true, {}, function () {
                             saveAs(decrypted.content, decrypted.metadata.name);
-                        }));
+                        });
+                        toolbar.$drawer.append(UIElements.getEntryFromButton($exportBtn));
                         rightsideDisplayed = true;
                     }
 
@@ -136,14 +139,16 @@ define([
                         common.setPadAttribute('fileType', metadata.type);
                     }
 
-                    toolbar.addElement(['pageTitle'], {
-                        pageTitle: title,
-                        title: Title.getTitleConfig(),
-                    });
-                    toolbar.$drawer.append(common.createButton('forget', true));
-                    toolbar.$drawer.append(common.createButton('properties', true));
+                    if (toolbar.updatePageTitle) {
+                        toolbar.updatePageTitle(title);
+                    }
+                    let $forget = common.createButton('forget', true);
+                    let $prop = common.createButton('properties', true);
+                    toolbar.$drawer.append(UIElements.getEntryFromButton($forget));
+                    toolbar.$drawer.append(UIElements.getEntryFromButton($prop));
                     if (common.isLoggedIn()) {
-                        toolbar.$drawer.append(common.createButton('hashtag', true));
+                        let $tags = common.createButton('hashtag', true);
+                        toolbar.$drawer.append(UIElements.getEntryFromButton($tags));
                     }
                     toolbar.$file.show();
                 }).on('error', function (err) {

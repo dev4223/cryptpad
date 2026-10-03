@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 define([
     'jquery',
     '/common/diffMarked.js',
@@ -12,7 +16,6 @@ define([
     var ifrw;
     var $modal;
     var $content;
-    var placeholder;
     var options;
     var separator = '<hr data-pewpew="pezpez">';
     var separatorReg = /<hr data\-pewpew="pezpez">/g;
@@ -205,14 +208,21 @@ define([
     var addEvent = function () {
         console.log($modal);
         var icon_to;
-        $modal.mousemove(function () {
+        var mousemove = function () {
             var $buttons = $modal.find('.cp-app-slide-modal-button');
             $buttons.show();
             if (icon_to) { window.clearTimeout(icon_to); }
             icon_to = window.setTimeout(function() {
                 $buttons.fadeOut();
             }, 1000);
-        });
+        };
+        
+        $modal.mousemove(mousemove);
+        $modal.on('touchstart', mousemove);
+        $modal.on('touchend', mousemove);
+        $modal.on('touchcancel', mousemove);
+        $modal.on('touchmove', mousemove);
+
         $modal.find('#cp-app-slide-modal-exit').click(function () {
             var ev = $.Event("keyup");
             ev.which = 27;
@@ -310,7 +320,7 @@ define([
         $modal = Slide.$modal = $m;
         $content = Slide.$content = $c;
         ifrw = Slide.ifrw = window;
-        placeholder = Slide.placeholder = ph;
+        Slide.placeholder = ph;
         options = Slide.options = opt;
         addEvent();
         addSwipeEvents();

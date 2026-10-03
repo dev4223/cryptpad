@@ -1,8 +1,12 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 define([
+    '/api/config',
     'jquery',
     '/customize/login.js',
     '/common/cryptpad-common.js',
-    //'/common/test.js',
     '/common/common-credential.js',
     '/common/common-interface.js',
     '/common/common-util.js',
@@ -11,10 +15,10 @@ define([
     '/common/common-feedback.js',
     '/common/outer/local-store.js',
     '/common/hyperscript.js',
+    '/common/extensions.js',
     '/customize/pages.js',
-
-    'css!/bower_components/components-font-awesome/css/font-awesome.min.css',
-], function ($, Login, Cryptpad, /*Test,*/ Cred, UI, Util, Realtime, Constants, Feedback, LocalStore, h, Pages) {
+    '/common/common-icons.js',
+], function (Config, $, Login, Cryptpad, Cred, UI, Util, Realtime, Constants, Feedback, LocalStore, h, Extensions, Pages, Icons) {
     if (window.top !== window) { return; }
     var Messages = Cryptpad.Messages;
     $(function () {
@@ -22,6 +26,18 @@ define([
             // already logged in, redirect to drive
             document.location.href = '/drive/';
             return;
+        }
+
+        // If the token is provided in the URL, hide the field
+        var token;
+        if (window.location.hash) {
+            var hash = window.location.hash.slice(1);
+            token = hash;
+            $('body').removeClass('cp-register-closed');
+        } else if (Config.sso && Config.restrictRegistration && !Config.restrictSsoRegistration) {
+            $('body').find('.cp-register-det').css('display', 'flex');
+            $('body').find('#data').hide();
+            $('body').find('#userForm').hide();
         }
 
         // text and password input fields
@@ -43,17 +59,43 @@ define([
 
         var $register = $('button#register');
 
-        var registering = false;
-        var test;
-
         var I_REALLY_WANT_TO_USE_MY_EMAIL_FOR_MY_USERNAME = false;
         var br = function () { return h('br'); };
+
+        if (Config.sso) {
+            // TODO
+            // Config.sso.force => no legacy login allowed
+            // Config.sso.password => cp password required or forbidden
+            // Config.sso.list => list of configured identity providers
+            var $sso = $('div.cp-register-sso');
+            var list = Config.sso.list.map(function (name) {
+                var b = h('button.btn.btn-secondary', name);
+                var $b = $(b).click(function () {
+                    $b.prop('disabled', 'disabled');
+                    Login.ssoAuth(name, function (err, data) {
+                        if (data.url) {
+                            window.location.href = data.url;
+                        }
+                    });
+                });
+                return b;
+            });
+            $sso.append(list);
+
+            // Disable bfcache (back/forward cache) to prevent SSO button
+            // being disabled when using the browser "back" feature on the SSO page
+            $(window).on('unload', () => {});
+        }
 
         var registerClick = function () {
             var uname = $uname.val().trim();
     // trim whitespace surrounding the username since it is otherwise included in key derivation
     // most people won't realize that its presence is significant
             $uname.val(uname);
+            if (uname.length > Cred.MAXIMUM_NAME_LENGTH) {
+                let nameWarning = Messages._getKey('register_nameTooLong', [ Cred.MAXIMUM_NAME_LENGTH ]);
+                return void UI.alert(nameWarning);
+            }
 
             var passwd = $passwd.val();
             var confirmPassword = $confirm.val();
@@ -63,7 +105,7 @@ define([
             try {
                 // if this throws there's either a horrible bug (which someone will report)
                 // or the instance admins did not configure a terms page.
-                doesAccept = $checkAcceptTerms[0].checked;
+                doesAccept = $checkAcceptTerms.length && $checkAcceptTerms[0].checked;
             } catch (err) {
                 console.error(err);
             }
@@ -93,9 +135,7 @@ define([
                 var warning = Messages._getKey('register_passwordTooShort', [
                     Cred.MINIMUM_PASSWORD_LENGTH
                 ]);
-                return void UI.alert(warning, function () {
-                    registering = false;
-                });
+                return void UI.alert(warning);
             }
 
             if (passwd !== confirmPassword) { // do their passwords match?
@@ -106,28 +146,51 @@ define([
                 return void UI.alert(Messages.register_mustAcceptTerms);
             }
 
+            const extensions = [];
+            Extensions.getExtensionsSync('POST_REGISTER').forEach(ext => {
+                try {
+                    extensions.push(ext);
+                } catch (error) {
+                    console.error(error);
+                }
+            });
+            const cb = (data) => {
+                // data.edPublic, data.edPrivate
+                const next = Util.mkAsync(() => {
+                    Login.redirect();
+                });
+                if (!extensions.length) {
+                    next();
+                } else {
+                    extensions.forEach(ext => {
+                        const content = ext.getContent(data);
+                        UI.emptyLoadingScreen(content);
+                    });
+                }
+                return true;
+            };
+
             setTimeout(function () {
                 var span = h('span', [
                     h('h2', [
-                        h('i.fa.fa-warning'),
+                        Icons.get('alert'),
                         ' ',
                         Messages.register_warning,
                     ]),
                     Messages.register_warning_note
                 ]);
-
-            UI.confirm(span,
-            function (yes) {
+            UI.confirm(span, function (yes) {
                 if (!yes) { return; }
 
-                Login.loginOrRegisterUI(uname, passwd, true, shouldImport, false /*Test.testing*/, function () {
-                    if (test) {
-                        localStorage.clear();
-                        test.pass();
-                        return true;
-                    }
+                Login.loginOrRegisterUI({
+                    uname,
+                    passwd,
+                    token,
+                    isRegister: true,
+                    shouldImport,
+                    onOTP: UI.getOTPScreen,
+                    cb
                 });
-                registering = true;
             }, {
                 ok: Messages.register_writtenPassword,
                 cancel: Messages.register_cancel,
@@ -135,7 +198,7 @@ define([
     anywhere else then we can deprecate them and make this a
     custom modal in common-interface (or here).  */
                 cancelClass: 'btn.btn-cancel.btn-register',
-                okClass: 'btn.btn-danger.btn-register',
+                okClass: 'btn.btn-danger.btn-register.btn-confirm',
                 reverseOrder: true,
                 done: function ($dialog) {
                     $dialog.find('> div').addClass('half');

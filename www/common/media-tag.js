@@ -1,8 +1,13 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 (function (window) {
-var factory = function () {
+var factory = function (Util) {
     var Promise = window.Promise;
     var cache;
     var cypherChunkLength = 131088;
+    var sendCredentials = window.sendCredentials || false; // SSO find a logical place to infer whether this should be set
 
     // Save a blob on the file system
     var saveFile = function (blob, url, fileName) {
@@ -46,6 +51,7 @@ var factory = function () {
             'text/plain',
             'image/png',
             'image/jpeg',
+            'image/webp',
             'image/jpg',
             'image/gif',
             'audio/mpeg',
@@ -114,7 +120,14 @@ var factory = function () {
                 var iframe = document.createElement('iframe');
                 if (cfg.pdf.viewer) { // PDFJS
                     var viewerUrl = cfg.pdf.viewer + '?file=' + url;
+                    iframe.setAttribute('sandbox', 'allow-scripts allow-downloads allow-same-origin allow-modals');
                     iframe.src = viewerUrl + '#' + window.encodeURIComponent(metadata.name);
+                    iframe.onload = function () {
+                        if (!metadata.name) { return; }
+                        try {
+                            iframe.contentWindow.PDFViewerApplication.setTitleUsingUrl(metadata.name);
+                        } catch (e) { console.warn(e); }
+                    };
                     return void cb (void 0, iframe);
                 }
                 iframe.src = url + '#' + window.encodeURIComponent(metadata.name);
@@ -124,7 +137,7 @@ var factory = function () {
                 var btn = document.createElement('button');
                 btn.setAttribute('class', 'btn btn-default');
                 btn.setAttribute('alt', metadata.alt || "");
-                btn.innerHTML = '<i class="fa fa-save"></i>' + cfg.download.text + '<br>' +
+                btn.innerHTML = '<i data-lucide="save"></i>' + cfg.download.text + '<br>' +
                                 (metadata.name ? '<b>' + fixHTML(metadata.name) + '</b>' : '');
                 btn.addEventListener('click', function () {
                     saveFile(content, url, metadata.name);
@@ -193,7 +206,7 @@ var factory = function () {
     };
     var makeDownloadButton = function (cfg, mediaObject, size, cb) {
         var metadata = cfg.metadata || {};
-        var i = '<i class="fa fa-paperclip"></i>';
+        var i = '<i data-lucide="paperclip"></i>';
         var name = metadata.name ? '<span class="mediatag-download-name">'+ i +'<b>'+
                                     fixHTML(metadata.name)+'</b></span>' : '';
         var btn = document.createElement('button');
@@ -233,6 +246,22 @@ var factory = function () {
         config.Cache.setBlobCache(id, u8, cb);
     };
 
+    var headRequest = function (src, cb) {
+        var xhr = new XMLHttpRequest();
+        xhr.open("HEAD", src);
+        if (sendCredentials) { xhr.withCredentials = true; }
+        xhr.onerror = function () { return void cb("XHR_ERROR"); };
+        xhr.onreadystatechange = function() {
+            if (this.readyState === this.DONE) {
+                cb(null, Number(xhr.getResponseHeader("Content-Length")));
+            }
+        };
+        xhr.onload = function () {
+            if (/^4/.test('' + this.status)) { return void cb("XHR_ERROR " + this.status); }
+        };
+        xhr.send();
+
+    };
     var getFileSize = function (src, _cb) {
         var cb = function (e, res) {
             _cb(e, res);
@@ -242,24 +271,14 @@ var factory = function () {
         var cacheKey = getCacheKey(src);
 
         var check = function () {
-            var xhr = new XMLHttpRequest();
-            xhr.open("HEAD", src);
-            xhr.onerror = function () { return void cb("XHR_ERROR"); };
-            xhr.onreadystatechange = function() {
-                if (this.readyState === this.DONE) {
-                    cb(null, Number(xhr.getResponseHeader("Content-Length")));
-                }
-            };
-            xhr.onload = function () {
-                if (/^4/.test('' + this.status)) { return void cb("XHR_ERROR " + this.status); }
-            };
-            xhr.send();
+            headRequest(src, cb);
         };
 
         if (!cacheKey) { return void check(); }
 
         getBlobCache(cacheKey, function (err, u8) {
-            if (err || !u8) { return void check(); }
+            check(); // send the HEAD request to update the blob activity
+            if (err || !u8) { return; }
             cb(null, 0);
         });
     };
@@ -276,6 +295,7 @@ var factory = function () {
         var fetch = function () {
             var xhr = new XMLHttpRequest();
             xhr.open('GET', src, true);
+            if (sendCredentials) { xhr.withCredentials = true; }
             xhr.responseType = 'arraybuffer';
 
             var progress = function (offset) {
@@ -328,18 +348,27 @@ var factory = function () {
 
         // Increment a nonce
         increment: function (N) {
-            var l = N.length;
-            while (l-- > 1) {
-                /* .jshint probably suspects this is unsafe because we lack types
-                   but as long as this is only used on nonces, it should be safe  */
-                if (N[l] !== 255) { return void N[l]++; } // jshint ignore:line
-
-                // you don't need to worry about this running out.
-                // you'd need a REAAAALLY big file
-                if (l === 0) { throw new Error('E_NONCE_TOO_LARGE'); }
-
+            // start from the last element directly without relying on confusing post-decrement behaviour
+            let l = N.length - 1;
+            while (l >= 0) {
+                // increment the least significant byte unless it's already at its maximum
+                if (N[l] !== 255) {
+                    N[l] += 1;
+                    return;
+                }
+                // if the loop reaches the most significant byte and the above block fails to return
+                // then the nonce's state-space has been exhausted
+                if (l === 0) {
+                    throw new Error("E_NONCE_TOO_LARGE");
+                }
+                // otherwise reset the lesser bytes to zero
                 N[l] = 0;
+                // and proceed to the next more significant byte
+                l -= 1;
             }
+            // the loop body will never be executed if a zero-length nonce is supplied
+            // this handles that case
+            throw new Error("E_EMPTY_NONCE");
         },
 
         decodePrefix: function (A) {
@@ -356,7 +385,7 @@ var factory = function () {
 
         // Gets the key from the key string.
         getKeyFromStr: function (str) {
-            return window.nacl.util.decodeBase64(str);
+            return Util.decodeBase64(str);
         }
     };
 
@@ -387,6 +416,7 @@ var factory = function () {
         var fetch = function () {
             var xhr = new XMLHttpRequest();
             xhr.open('GET', src, true);
+            if (sendCredentials) { xhr.withCredentials = true; }
             xhr.setRequestHeader('Range', 'bytes=0-1');
             xhr.responseType = 'arraybuffer';
 
@@ -399,6 +429,7 @@ var factory = function () {
                 var xhr2 = new XMLHttpRequest();
 
                 xhr2.open("GET", src, true);
+                if (sendCredentials) { xhr2.withCredentials = true; }
                 xhr2.setRequestHeader('Range', 'bytes=2-' + (size + 2));
                 xhr2.responseType = 'arraybuffer';
                 xhr2.onload = function () {
@@ -429,7 +460,7 @@ var factory = function () {
         var metaChunk = window.nacl.secretbox.open(metaBox, Decrypt.createNonce(), key);
 
         try {
-            return JSON.parse(window.nacl.util.encodeUTF8(metaChunk));
+            return JSON.parse(Util.encodeUTF8(metaChunk));
         }
         catch (e) { return null; }
     };
@@ -468,7 +499,7 @@ var factory = function () {
 
         Decrypt.increment(nonce);
 
-        try { res.metadata = JSON.parse(Nacl.util.encodeUTF8(metaChunk)); }
+        try { res.metadata = JSON.parse(Util.encodeUTF8(metaChunk)); }
         catch (e) { return void done('E_METADATA_DECRYPTION'); }
 
         if (!res.metadata) { return void done('NO_METADATA'); }
@@ -544,7 +575,11 @@ var factory = function () {
     var copyAttributes = function (origin, dest) {
         Object.keys(origin.attributes).forEach(function (i) {
             if (!/^data-attr/.test(origin.attributes[i].name)) { return; }
-            var name = origin.attributes[i].name.slice(10);
+            var name = origin.attributes[i].name.slice(10).toLowerCase();
+            // Ignore attributes filtered out by the sanitizer
+            if (name === "src") { return; }
+            if (name === "srcdoc") { return; }
+            if (/^on/i.test(name)) { return; }
             var value = origin.attributes[i].value;
             dest.setAttribute(name, value);
         });
@@ -743,7 +778,11 @@ var factory = function () {
             });
         };
 
-        if (cfg.force) { dl(); return mediaObject; }
+        if (cfg.force) {
+            headRequest(src, function () {}); // Update activity
+            dl();
+            return mediaObject;
+        }
 
         var maxSize = typeof(config.maxDownloadSize) === "number" ? config.maxDownloadSize
                                 : (5 * 1024 * 1024);
@@ -799,8 +838,8 @@ var factory = function () {
     if (typeof(module) !== 'undefined' && module.exports) {
         module.exports = factory();
     } else if ((typeof(define) !== 'undefined' && define !== null) && (define.amd !== null)) {
-        define([], function () {
-            return factory();
+        define(['/common/common-util.js'], function (Util) {
+            return factory(Util);
         });
     } else {
         // unsupported initialization

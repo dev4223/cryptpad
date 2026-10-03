@@ -1,18 +1,25 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Load #1, load as little as possible because we are in a race to get the loading screen up.
 define([
-    '/bower_components/nthen/index.js',
+    '/components/nthen/index.js',
     '/api/config',
     '/common/dom-ready.js',
     '/common/common-hash.js',
     '/common/sframe-common-outer.js'
 ], function (nThen, ApiConfig, DomReady, Hash, SFCommonO) {
 
+    var isIntegration = Boolean(window.CP_integration_outer);
+    var integration = window.CP_integration_outer || {};
+
     // Loaded in load #2
     var hash, href, version;
     nThen(function (waitFor) {
         DomReady.onReady(waitFor());
     }).nThen(function (waitFor) {
-        var obj = SFCommonO.initIframe(waitFor, true);
+        var obj = SFCommonO.initIframe(waitFor, true, integration.pathname);
         href = obj.href;
         hash = obj.hash;
         var parsed = Hash.parsePadUrl(href);
@@ -20,9 +27,14 @@ define([
             var opts = parsed.getOptions();
             version = opts.versionHash;
         }
+        if (isIntegration) {
+            href = integration.href;
+            hash = integration.hash;
+        }
     }).nThen(function (/*waitFor*/) {
         var addData = function (obj) {
-            obj.ooType = window.location.pathname.replace(/^\//, '').replace(/\/$/, '');
+            let path = (integration && integration.pathname) || window.location.pathname;
+            obj.ooType = path.replace(/^\//, '').replace(/\/$/, '');
             obj.ooVersionHash = version;
             obj.ooForceVersion = localStorage.CryptPad_ooVersion || "";
         };
@@ -34,25 +46,37 @@ define([
             sframeChan.on('Q_OO_SAVE', function (data, cb) {
                 var chanId = Utils.Hash.hrefToHexChannelId(data.url);
                 Cryptpad.getPadAttribute('lastVersion', function (err, data) {
-                    if (data) {
-                        var oldChanId = Utils.Hash.hrefToHexChannelId(data);
-                        if (oldChanId !== chanId) { Cryptpad.unpinPads([oldChanId], function () {}); }
-                    }
+                    if (!data) { return; }
+                    var oldChanId = Utils.Hash.hrefToHexChannelId(data);
+                    if (oldChanId !== chanId) { Cryptpad.unpinPads([oldChanId], function () {}); }
                 });
-                Cryptpad.pinPads([chanId], function (e) {
-                    if (e) { return void cb(e); }
-                    Cryptpad.setPadAttribute('lastVersion', data.url, cb);
-                    channels.lastVersion = data.url;
+
+                // If pad is stored, pin
+                Cryptpad.getPadAttribute('channel', function (err, data) {
+                    if (err || !data) { return; }
+                    Cryptpad.pinPads([chanId], function (e) {
+                        if (e) { return void cb(e); }
+                    });
                 });
+                Cryptpad.setPadAttribute('lastVersion', data.url, cb);
+                channels.lastVersion = data.url;
                 Cryptpad.setPadAttribute('lastCpHash', data.hash, cb);
                 channels.lastCpHash = data.hash;
             });
             sframeChan.on('Q_OO_OPENCHANNEL', function (data, cb) {
+                const other = Cryptpad.otherPadAttrs = {
+                    rtChannel: data.channel
+                };
+                if (channels.lastVersion) {
+                    other.lastVersion = channels.lastVersion;
+                }
+                other.lastCpHash = channels.lastCpHash;
+
                 Cryptpad.getPadAttribute('rtChannel', function (err, res) {
                     // If already stored, don't pin it again
+                    channels.rtChannel = data.channel;
                     if (res && res === data.channel) { return; }
                     Cryptpad.pinPads([data.channel], function () {
-                        channels.rtChannel = data.channel;
                         Cryptpad.setPadAttribute('rtChannel', data.channel, function () {});
                     });
                 });
@@ -101,8 +125,8 @@ define([
                     });
                     toPin = Utils.Util.deduplicateString(toPin);
                     toUnpin = Utils.Util.deduplicateString(toUnpin);
-                    Cryptpad.pinPads(toPin, function () {});
-                    Cryptpad.unpinPads(toUnpin, function () {});
+                    if (toPin.length) { Cryptpad.pinPads(toPin, function () {}); }
+                    if (toUnpin.length) { Cryptpad.unpinPads(toUnpin, function () {}); }
                     if (!toPin.length && !toUnpin.length) { return; }
                     Cryptpad.setPadAttribute('ooImages', list, function (err) {
                         if (err) { console.error(err); }
@@ -150,18 +174,21 @@ define([
                 Utils.initUnsafeIframe(obj, cb);
             });
 
-
-
         };
         SFCommonO.start({
             hash: hash,
             href: href,
             type: 'oo',
-            useCreationScreen: true,
             addData: addData,
             addRpc: addRpc,
             getPropChannels: getPropChannels,
-            messaging: true
+            messaging: true,
+            useCreationScreen: !isIntegration,
+            noDrive: true,
+            integration: isIntegration,
+            integrationUtils: integration.utils,
+            integrationConfig: integration.config || {},
+            initialState: integration.initialState || undefined
         });
     });
 });

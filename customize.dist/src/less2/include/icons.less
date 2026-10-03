@@ -1,3 +1,9 @@
+/*
+ * SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
 .icons_main() {
     li {
         display: inline-block;
@@ -27,12 +33,12 @@
             color: @cp_drive-fg;
         }
         &.cp-icons-element-selected {
-            background: @cp_drive-icon-hover;
             color: @cp_drive-fg;
+            outline: @cryptpad_color_brand solid 2px;
         }
-        .fa, .cptools {
-            display: block;
-            font-size: 64px;
+        svg {
+            height: 4rem;
+            width: 4rem;
             margin: 18px 0;
             text-align: center;
             &.listonly {
@@ -45,7 +51,7 @@
         }
         &.cp-app-disabled {
             cursor: not-allowed !important;
-            .fa, .cptools { cursor: not-allowed !important; }
+            svg { cursor: not-allowed !important; }
             opacity: 0.5;
         }
     }

@@ -1,7 +1,11 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 define([
     'jquery',
-    '/bower_components/chainpad-crypto/crypto.js',
-    '/bower_components/nthen/index.js',
+    '/components/chainpad-crypto/crypto.js',
+    '/components/nthen/index.js',
     '/common/sframe-common.js',
     '/common/common-interface.js',
     '/common/common-ui-elements.js',
@@ -10,9 +14,9 @@ define([
     '/common/hyperscript.js',
     'json.sortify',
     '/customize/messages.js',
+    '/common/common-icons.js',
 
-    'css!/bower_components/bootstrap/dist/css/bootstrap.min.css',
-    'css!/bower_components/components-font-awesome/css/font-awesome.min.css',
+    'css!/components/bootstrap/dist/css/bootstrap.min.css',
     'less!/secureiframe/app-secure.less',
 ], function (
     $,
@@ -25,7 +29,8 @@ define([
     Hash,
     h,
     Sortify,
-    Messages)
+    Messages
+)
 {
     var APP = window.APP = {};
 
@@ -117,6 +122,7 @@ define([
                 var key = Hash.encodeBase64(secret.keys.cryptKey);
                 sframeChan.event("EV_SECURE_ACTION", {
                     type: parsed.type,
+                    fileType: data.fileType,
                     href: data.url,
                     src: src,
                     name: data.name,
@@ -204,7 +210,7 @@ define([
             }
 
             var $container = $(h('span.cp-filepicker-content', [
-                h('div.cp-loading-spinner-container', h('span.cp-spinner'))
+                h('div.cp-loading-spinner-container', h('span.cp-spinner-main'))
             ])).appendTo($block);
 
             // Update the files list when needed
@@ -230,7 +236,7 @@ define([
                         if (data.static) { $span.attr('title', Util.fixHTML(data.href)); }
                         $span.click(function () {
                             if (typeof onFilePicked === "function") {
-                                onFilePicked({url: data.href, name: name, static: data.static, password: data.password});
+                                onFilePicked({url: data.href, name: name, static: data.static, password: data.password, fileType: data.fileType});
                             }
                         });
 

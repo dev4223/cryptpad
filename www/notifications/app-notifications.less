@@ -1,3 +1,9 @@
+/*
+ * SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
 @import (reference) '../../customize/src/less2/include/framework.less';
 @import (reference) '../../customize/src/less2/include/sidebar-layout.less';
 @import (reference) '../../customize/src/less2/include/avatar.less';
@@ -14,6 +20,10 @@
         cursor: pointer;
         &:hover {
             background-color: @cp_notif-hover;
+        }
+        &:focus-visible {
+            outline: @variables_focus_style;
+            border-radius: @variables_radius;
         }
     }
 
@@ -53,6 +63,8 @@
                     justify-content: center;
                     align-items: center;
                     width: 3rem;
+                    border-radius: @variables_radius;
+                    margin: 0.2rem;
                 }
             }
         }
@@ -72,6 +84,7 @@
                 justify-content: flex-start;
                 align-items: center;
                 background-color: @cp_notif-bg;
+                border-top: 1px solid @cp_notif-table-border;
                 &.no-notifications {
                     display: none;
                     padding: 1rem 1rem;
@@ -83,17 +96,24 @@
                 }
                 .cp-avatar {
                     .avatar_main(48px);
-                    padding: 0 10px;
+                    padding: 5px;
+                    margin: 0.2rem;
                     cursor: pointer;
                     &:hover {
                         background-color: @cp_notif-hover;
                     }
+                    &:focus-visible {
+                        outline: @variables_focus_style;
+                        border-radius: @variables_radius;
+                    }
+                }
+                .cp-avatar-calendar {
+                    min-width: 2em;
+                    min-height: 2em;
+                    margin: 1rem 0 1rem 1rem;
                 }
                 &.cp-app-notification-archived {
                     background-color: @cp_notif-bg;
-                }
-                &:not(:first-child) {
-                    border-top: 1px solid @cp_notif-table-border;
                 }
                 &.dismissed {
                     display: none;
@@ -105,16 +125,20 @@
                     flex-direction: row;
                     justify-content: flex-start;
                     align-items: center;
+                    margin: 0.1rem;
+                    white-space: normal;
+                    word-break: break-word;
+                    &:focus-visible {
+                        outline: @variables_focus_style;
+                        border-radius: @variables_radius;
+                    }
                     p {
                         display: inline-block;
                         margin: 1rem 1rem;
                         flex: 1;
-                        min-width: 0;
                     }
                     .notification-time {
-                        margin: 1rem 1rem;
-                        color: grey;
-                        margin-left: auto;
+                        margin: 1rem 1rem 1rem auto;
                     }
                 }
 
@@ -127,6 +151,13 @@
                     align-items: center;
                     border-left: 1px solid @cp_notif-table-border;
                     width: 3rem;
+                    margin: 0.2rem;
+                    svg {
+                        margin: 0;
+                    }
+                    &:focus-visible{
+                        border-radius: @variables_radius;
+                    }
                 }
             }
         }

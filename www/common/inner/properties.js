@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 define([
     'jquery',
     '/common/common-util.js',
@@ -7,7 +11,7 @@ define([
     '/common/inner/common-modal.js',
     '/common/hyperscript.js',
     '/customize/messages.js',
-    '/bower_components/nthen/index.js',
+    '/components/nthen/index.js',
 ], function ($, Util, Hash, UI, UIElements, Modal, h,
              Messages, nThen) {
     var Properties = {};
@@ -37,20 +41,18 @@ define([
             }));
         }
 
-        if (!data.fakeHref) {
-            if (data.href) {
-                $('<label>', {'for': 'cp-app-prop-link'}).text(Messages.editShare).appendTo($d);
-                $d.append(UI.dialog.selectable(data.href, {
-                    id: 'cp-app-prop-link',
-                }));
-            }
+        if (data.href) {
+            $('<label>', {'for': 'cp-app-prop-link'}).text(Messages.editShare).appendTo($d);
+            $d.append(UI.dialog.selectable(data.href, {
+                id: 'cp-app-prop-link',
+            }));
+        }
 
-            if (data.roHref && !opts.noReadOnly) {
-                $('<label>', {'for': 'cp-app-prop-rolink'}).text(Messages.viewShare).appendTo($d);
-                $d.append(UI.dialog.selectable(data.roHref, {
-                    id: 'cp-app-prop-rolink',
-                }));
-            }
+        if (data.roHref && !opts.noReadOnly) {
+            $('<label>', {'for': 'cp-app-prop-rolink'}).text(Messages.viewShare).appendTo($d);
+            $d.append(UI.dialog.selectable(data.roHref, {
+                id: 'cp-app-prop-rolink',
+            }));
         }
 
         if (data.tags && Array.isArray(data.tags)) {
@@ -197,7 +199,7 @@ define([
         var tabs = [{
             getTab: getPadProperties,
             title: Messages.fc_prop,
-            icon: "fa fa-info-circle",
+            icon: "features",
         }];
         Modal.getModal(common, opts, tabs, cb);
     };

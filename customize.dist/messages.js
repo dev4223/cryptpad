@@ -1,46 +1,76 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 (function () {
 // add your module to this map so it gets used
 var map = {
+    'ar': 'اَلْعَرَبِيَّةُ',
     'ca': 'Català',
     'cs': 'Čeština',
     'de': 'Deutsch',
-    'el': 'Ελληνικά',
+    //'el': 'Ελληνικά',
     'es': 'Español',
+    'es_CU': 'Español cubano',
     'eu': 'Euskara',
     'fi': 'Suomi',
     'fr': 'Français',
     //'hi': 'हिन्दी',
+    'id': 'Bahasa Indonesia',
     'it': 'Italiano',
     'ja': '日本語',
     'nb': 'Norwegian Bokmål',
-    //'nl': 'Nederlands'
+    'nl': 'Nederlands',
     'pl': 'Polski',
     'pt-br': 'Português do Brasil',
     'pt-pt': 'Português do Portugal',
     'ro': 'Română',
     'ru': 'Русский',
-    //'sv': 'Svenska',
+    'sv': 'Svenska',
     //'te': 'తెలుగు',
     'uk': 'Українська',
-    'zh': '繁體中文',
+    'zh': '中文(簡體)', // simplified
+    'zh_Hant': '中文(正體)', // traditional
 };
 
-var messages = {};
+var Messages = {};
 var LS_LANG = "CRYPTPAD_LANG";
 var getStoredLanguage = function () { return localStorage && localStorage.getItem(LS_LANG); };
 var getBrowserLanguage = function () { return navigator.language || navigator.userLanguage || ''; };
-var getLanguage = messages._getLanguage = function () {
+// Normalize browser/localStorage language labels to CryptPad internal keys.
+// We keep this centralized to avoid scattered `if (l === 'zh') ...` logic.
+var langAliases = {
+    'zh-cn': 'zh',
+    'zh-sg': 'zh',
+    'zh-hans': 'zh',
+
+    'zh-tw': 'zh_Hant',
+    'zh-hk': 'zh_Hant',
+    'zh-mo': 'zh_Hant',
+    'zh-hant': 'zh_Hant',
+};
+var normalizeLanguage = function (l) {
+    if (!l) { return l; }
+    // If it already matches a supported internal key, return as-is.
+    if (map[l]) { return l; }
+    var lLower = String(l).toLowerCase().replace('_', '-');
+    return langAliases[lLower] || l;
+};
+var getLanguage = Messages._getLanguage = function () {
     if (window.cryptpadLanguage) { return window.cryptpadLanguage; }
-    try {
-        if (getStoredLanguage()) { return getStoredLanguage(); }
-    } catch (e) { console.log(e); }
+
     var l = getBrowserLanguage();
-    // Edge returns 'fr-FR' --> transform it to 'fr' and check again
+    try {
+        l = getStoredLanguage() || getBrowserLanguage();
+    } catch (e) { console.log(e); }
+    l = normalizeLanguage(l);
+
     return map[l] ? l :
             (map[l.split('-')[0]] ? l.split('-')[0] :
                 (map[l.split('_')[0]] ? l.split('_')[0] : 'en'));
 };
 var language = getLanguage();
+window.cryptpadLanguage = language;
 
 // Translations files were migrated from requirejs modules to json.
 // To avoid asking every administrator to update their customized translation files,
@@ -84,6 +114,9 @@ define(req, function(AppConfig, Default, Language) {
         });
     }
 
+    let html = typeof(document) !== "undefined" && document.documentElement;
+    if (html) { html.setAttribute('lang', language); }
+
     var extend = function (a, b) {
         for (var k in b) {
             if (Array.isArray(b[k])) {
@@ -99,19 +132,18 @@ define(req, function(AppConfig, Default, Language) {
         }
     };
 
-    extend(messages, Default);
+    extend(Messages, Default);
     if (Language && language !== defaultLanguage) {
         // Add the translated keys to the returned object
-        extend(messages, Language);
+        extend(Messages, Language);
     }
 
-    messages._languages = map;
-    messages._languageUsed = language;
-
+    Messages._languages = map;
+    Messages._languageUsed = language;
     // Get keys with parameters
-    messages._getKey = function (key, argArray) {
-        if (!messages[key]) { return '?'; }
-        var text = messages[key];
+    Messages._getKey = function (key, argArray) {
+        if (!Messages[key]) { return '?'; }
+        var text = Messages[key];
         if (typeof(text) === 'string') {
             return text.replace(/\{(\d+)\}/g, function (str, p1) {
                 if (typeof(argArray[p1]) === 'string' || typeof(argArray[p1]) === "number") {
@@ -125,7 +157,7 @@ define(req, function(AppConfig, Default, Language) {
         }
     };
 
-    return messages;
+    return Messages;
 
 });
 }());

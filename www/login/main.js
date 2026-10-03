@@ -1,15 +1,21 @@
+// SPDX-FileCopyrightText: 2023 XWiki CryptPad Team <contact@cryptpad.org> and contributors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 define([
+    '/api/config',
     'jquery',
+    '/common/hyperscript.js',
     '/common/cryptpad-common.js',
     '/customize/login.js',
     '/common/common-interface.js',
     '/common/common-realtime.js',
     '/common/common-feedback.js',
     '/common/outer/local-store.js',
+    '/customize/messages.js',
     //'/common/test.js',
 
-    'css!/bower_components/components-font-awesome/css/font-awesome.min.css',
-], function ($, Cryptpad, Login, UI, Realtime, Feedback, LocalStore /*, Test */) {
+], function (Config, $, h, Cryptpad, Login, UI, Realtime, Feedback, LocalStore, Messages /*, Test */) {
     if (window.top !== window) { return; }
     $(function () {
         var $checkImport = $('#import-recent');
@@ -17,6 +23,45 @@ define([
             // already logged in, redirect to drive
             document.location.href = '/drive/';
             return;
+        }
+
+        const forceStandardLogin = window.location.hash === "#standard-login";
+        if (Config.sso) {
+            // Config.sso.force => no legacy login allowed
+            // Config.sso.password => cp password required or forbidden
+            // Config.sso.list => list of configured identity providers
+            var $sso = $('div.cp-login-sso');
+            // Auto-redirect if only forceRedirect set to true
+            const ssoLength = Config?.sso?.list?.length;
+            const ssoEnforced = (Config?.sso?.force && !forceStandardLogin) ? '.cp-hidden' : '';
+            if (ssoLength === 1 && ssoEnforced) {
+                Login.ssoAuth(Config.sso.list[0], (err, data) => {
+                    if (data && data.url) {
+                        window.location.href = data.url;
+                    } else {
+                        console.error("SSO auto-redirect failed:", err || "no URL");
+                        UI.warn(Messages.error);
+                    }
+                });
+                return;
+            }
+            var list = Config.sso.list.map(function (name) {
+                var b = h('button.btn.btn-secondary', name);
+                var $b = $(b).click(function () {
+                    $b.prop('disabled', 'disabled');
+                    Login.ssoAuth(name, function (err, data) {
+                        if (data.url) {
+                            window.location.href = data.url;
+                        }
+                    });
+                });
+                return b;
+            });
+            $sso.append(list);
+
+            // Disable bfcache (back/forward cache) to prevent SSO button
+            // being disabled when using the browser "back" feature on the SSO page
+            $(window).on('unload', () => {});
         }
 
         /* Log in UI */
@@ -49,14 +94,11 @@ define([
             var shouldImport = $checkImport[0].checked;
             var uname = $uname.val();
             var passwd = $passwd.val();
-            Login.loginOrRegisterUI(uname, passwd, false, shouldImport, /*Test.testing */ false, function () {
-                /*
-                if (test) {
-                    localStorage.clear();
-                    //test.pass();
-                    return true;
-                }
-                */
+            Login.loginOrRegisterUI({
+                uname,
+                passwd,
+                shouldImport,
+                onOTP: UI.getOTPScreen
             });
         });
         $('#register').on('click', function () {
