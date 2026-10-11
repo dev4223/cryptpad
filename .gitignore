@@ -27,6 +27,7 @@ logs
 privileged.conf
 *yolo.sh
 config/config.js
+config/infra.js
 config/sso.js
 lib/plugins/*
 !lib/plugins/README.md
